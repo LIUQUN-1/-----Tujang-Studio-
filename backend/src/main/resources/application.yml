@@ -1,0 +1,58 @@
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+
+spring:
+  application:
+    name: tujang-studio-api
+
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:tujang}?useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=utf8&serverTimezone=UTC
+    username: ${DB_USER:tujang}
+    password: ${DB_PASSWORD:tujang_pw}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      pool-name: tujang-pool
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 5000
+
+  servlet:
+    multipart:
+      # 单文件上限取"模板允许的最大值"再留余量，真正的业务上限按模板校验
+      max-file-size: 12MB
+      max-request-size: 24MB
+
+  jackson:
+    time-zone: UTC
+    serialization:
+      write-dates-as-timestamps: false
+
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: true
+  type-aliases-package: com.tujang.studio.domain
+
+app:
+  storage:
+    # 运行时产物（用户上传、制作结果），随容器 volume 持久化
+    data-dir: ${APP_STORAGE_DATA_DIR:./data}
+    # 只读种子素材（模板封面、预置结果图）
+    seed-dir: ${APP_STORAGE_SEED_DIR:../seed}
+
+  task:
+    # 异步执行线程池：多任务可并行，题目不要求真并行
+    pool-size: ${APP_TASK_POOL_SIZE:4}
+    queue-capacity: ${APP_TASK_QUEUE_CAPACITY:50}
+
+  simulation:
+    # 每步默认耗时（毫秒），可被 /api/dev/simulation 覆盖
+    default-durations-ms:
+      ASSET_CHECK: 800
+      GENERATE: 2500
+      FINALIZE: 600
+
+logging:
+  level:
+    root: INFO
+    com.tujang.studio: DEBUG

@@ -1,0 +1,10 @@
+# pnpm 10+ 把这类设置移到了这里（package.json 的 pnpm 字段已不再读取）。
+# 这三个依赖需要执行安装脚本才能拿到平台二进制：
+#   esbuild       —— vitest 的打包器
+#   sharp         —— next/image 的图像优化
+#   unrs-resolver —— eslint-config-next 的模块解析器
+# 由 `pnpm approve-builds --all` 生成，改动后需重新 pnpm install。
+allowBuilds:
+  esbuild: true
+  sharp: true
+  unrs-resolver: true

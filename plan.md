@@ -1,0 +1,384 @@
+# 图匠工坊 Tujang Studio — 实施计划（plan.md）
+
+> 目标题：小影科技 2027 校招 · 素材制作网站
+> 本文件是**动工前的唯一计划依据**。需求原文见 `项目说明文件/小影科技2027校招.md`，本计划不重复需求，只回答"怎么做、按什么顺序做、做到什么算完"。
+
+---
+
+## 0. 一句话定位
+
+做的是一个**能 `docker compose up --build` 一键跑起来的全栈网站**：`模板列表 → 模板详情 → 上传素材 → 提交制作任务 → 轮询看阶段 → 看历史结果`。
+
+真正被打分的是两条主线，其余都是支撑：
+
+- **后端**：一次提交如何变成一个"受理即返回、后台按三步推进、状态落 MySQL、失败即中断"的异步任务；
+- **前端**：如何让 N 个任务各自推进互不串扰，如何把"查询失败"和"任务失败"区分开，如何刷新后接着跟踪、没活儿就停。
+
+> 判断标准来自题面原话：「实现复杂度本身不代表质量；完整、可靠且能解释的方案优先」。因此本计划**主动砍掉一切非必需技术**（不引入 MQ / Redis / SSE / WebSocket / 对象存储），把省下的时间全投到状态正确性、测试与交付说明上。
+
+---
+
+## 1. 技术选型
+
+### 1.1 目标栈
+
+| 层 | 选型 | 说明 |
+|---|---|---|
+| 前端 | Next.js **15.x** App Router + React 19 + TypeScript 5.x | 题面硬要求 App Router |
+| 样式 | Tailwind CSS **3.4** | 不用 v4，避免配置范式差异带来的返工 |
+| 客户端状态 | **Zustand**（约 1KB） | 任务是"按 id 索引的 Map"，Zustand 天然适配；比 Context 少一半样板，比 Redux 轻 |
+| 异步更新 | **HTTP 轮询**（1.5s，可配） | 题面不强制 SSE/WS；轮询最容易把"停止条件/清理"讲清楚 |
+| 后端 | Java **21** + Spring Boot **3.3.x** + MyBatis-Spring-Boot-Starter **3.0.x** | 见 §1.3 版本风险 |
+| 数据库 | MySQL **8.0** | 官方镜像 |
+| 容器 | Docker Compose（web / api / mysql 三服务） | R-14 |
+| 后端测试 | JUnit 5 + Mockito（纯单测，不依赖 DB） | 保证 CI 稳定、快 |
+| 前端测试 | Vitest + React Testing Library | 只测状态机与轮询，不做 E2E |
+| CI | GitHub Actions（两 job：web / api） | R-12 |
+
+> 具体小版本在 P0 脚手架时锁定，并以 `README` 记录的最终版本为准；本文件只定大方向和兼容边界。
+
+### 1.2 本机环境（已实测）
+
+| 项 | 现状 | 影响 |
+|---|---|---|
+| Node | v22.23.2，pnpm 12.15.0 | 满足 Next 15 |
+| JDK | `JAVA_HOME=E:\JDK21.0.10`（21.0.10）；**PATH 上的 `java` 是 25.0.1** | 必须显式用 JDK 21，见下 |
+| Maven | 3.9.12 | 可用 |
+| Docker | 29.1.3 + Compose v2.40.3，linux 容器正常 | 可用 |
+| 已占用端口 | **3306**（`mysql_server_1`）、**8080**、**8081** | 本地开发必须换端口，见 §9 |
+
+### 1.3 三个必须现在就规避的坑
+
+1. **JDK 25 在 PATH 上**。Spring Boot 3.3 + Spring Framework 6.1 的字节码增强对 JDK 25 有风险。对策：所有 Maven 命令强制 `JAVA_HOME=E:\JDK21.0.10`，`pom.xml` 里写 `maven.compiler.release=21`，Dockerfile 用 `eclipse-temurin:21-jre`。README 明确写"需要 JDK 21"。
+2. **端口冲突**。本机 3306/8080 已被其他项目容器占用。对策：compose 端口全部走变量（`${MYSQL_PORT:-3306}`），本地 `.env` 覆盖为 `3307/8082/3000`；**绝不**碰已有的 `mysql_server_1`，我们的容器统一命名 `tujang-*`。
+3. **跨容器访问后端**。浏览器里写 `http://backend:8080` 不通，写 `http://localhost:8082` 在容器里又不对。对策：**前端不直连后端**，统一走 Next.js rewrite 代理：浏览器请求 `/api/backend/**` → Next 服务端转发到 `BACKEND_URL`（本地 `http://localhost:8082`，compose 内 `http://backend:8080`）。好处：零 CORS 配置、内外网一致、`<img src>` 也能直接用代理路径加载结果图。
+
+---
+
+## 2. 目录结构
+
+```
+.
+├─ plan.md                      ← 本文件
+├─ README.md                    ← 交付主文档（R-13 七项）
+├─ docker-compose.yml
+├─ .env.example                 ← 非敏感配置示例；真实 .env 不入库
+├─ .github/workflows/ci.yml
+├─ docs/
+│  ├─ api.md                    ← 接口契约（字段级）
+│  ├─ schema.md                 ← 表结构与状态机说明
+│  ├─ demo.md                   ← 演示脚本（成功/指定失败/调耗时/多任务/刷新恢复/换用户）
+│  └─ ai-workflow.md            ← AI 工作流说明（R-13 末项）
+├─ db/
+│  ├─ 01-schema.sql
+│  └─ 02-seed.sql               ← 模板种子数据
+├─ backend/                     ← Spring Boot（Maven）
+│  ├─ Dockerfile
+│  ├─ pom.xml
+│  └─ src/{main,test}/...
+├─ frontend/                    ← Next.js App Router
+│  ├─ Dockerfile
+│  ├─ package.json / pnpm-lock.yaml
+│  └─ src/...
+├─ seed/                        ← 本地可访问的示例素材（R-02 要求）
+│  ├─ covers/                   ← 模板封面
+│  └─ results/                  ← 预置结果图
+└─ 项目说明文件/                 ← 题面与参考截图（原样保留）
+```
+
+后端运行期写入的文件统一落 `backend/data/files/{assets,results}`，compose 里挂 named volume；`seed/` 由启动时复制进去，保证"素材不能只靠浏览器临时地址"。
+
+---
+
+## 3. 数据模型
+
+### 3.1 表
+
+```sql
+app_user(id PK, display_name, created_at)                     -- 身份极简方案，见 §8.3
+template(id PK, title, category, cover_url, description,
+         required_image_count, accepted_mime_types,          -- 逗号分隔 jpeg,png
+         max_file_size_bytes, sort_order, created_at)
+asset(id PK, user_id, template_id, stored_path, original_filename,
+      mime_type, size_bytes, width, height, created_at)
+task(id PK, user_id, template_id,
+     status, current_step, failed_step, error_code, error_message,
+     result_url, result_width, result_height,
+     sim_fail_step, sim_durations_json,                       -- 模拟配置快照，见 §8.4
+     created_at, started_at, finished_at, updated_at)
+task_asset(task_id, asset_id, position, PK(task_id, asset_id))
+```
+
+索引：`task(user_id, created_at DESC)`（历史列表）、`task(status)`（恢复跟踪）、`asset(user_id, created_at)`。
+
+### 3.2 状态机（二维）
+
+```
+status      : PENDING | PROCESSING | SUCCEEDED | FAILED        （整体状态）
+current_step: ASSET_CHECK | GENERATE | FINALIZE                （当前阶段，独立于 status）
+failed_step : 上面三个之一，仅 FAILED 时有值
+```
+
+合法迁移只有：
+
+```
+PENDING ──> PROCESSING(ASSET_CHECK) ──> PROCESSING(GENERATE) ──> PROCESSING(FINALIZE) ──> SUCCEEDED
+                     │                        │                          │
+                     └────────────────────────┴──────────────────────────┴──> FAILED(failed_step=当前步)
+```
+
+**不变式（要写单测守住）**：
+
+- `SUCCEEDED` / `FAILED` 是吸收态，任何后续查询、任何重复执行都不能改回 `PROCESSING`；
+- `FAILED` 时 `result_url IS NULL`，且失败步之后的步骤绝不执行；
+- 每条状态写入都是"带条件的 UPDATE"（`WHERE id=? AND status NOT IN ('SUCCEEDED','FAILED')`），从数据库层面保证幂等。
+
+---
+
+## 4. 接口契约（最小集）
+
+| 方法 | 路径 | 作用 | 关键点 |
+|---|---|---|---|
+| GET | `/api/templates?category=` | 模板列表 | 数据来自 DB，不在前端写死 |
+| GET | `/api/templates/categories` | 分类清单 | 供 Tab 渲染 |
+| GET | `/api/templates/{id}` | 模板详情 | 不存在 → 404 + 可读错误体 |
+| POST | `/api/uploads` | 上传单张素材（multipart） | 服务端复校 mime/大小/可解码；返回 `assetId` + 可访问 `url` |
+| DELETE | `/api/uploads/{assetId}` | 移除上传位时清临时素材 | 仅本人、未绑定任务时可删 |
+| POST | `/api/tasks` | **提交制作任务** | 校验后建记录 → **202 + taskId**，不等制作完成 |
+| GET | `/api/tasks/{id}` | 查单个任务 | **纯只读，绝不能推进任务** |
+| GET | `/api/tasks?scope=history` | 个人历史（含未完成，用于刷新恢复） | 按 `user_id` 隔离，倒序 |
+| GET | `/api/me` | 当前身份 | 供前端显示/切换 |
+| POST | `/api/dev/simulation` | 设置模拟参数（仅 dev profile） | 见 §8.4 |
+| GET | `/files/**` | 静态素材/结果图 | 也经 Next 代理暴露 |
+
+> 详细字段（含成功/处理中/失败三种响应体）在 P0 落地为 `docs/api.md`，作为前后端唯一真源。字段命名直接沿用前一轮讨论的形态：任务的 `result.url` 就是"制作出来的东西"。
+
+---
+
+## 5. 分阶段计划
+
+每个阶段都给出**产出物**和**可验证的完成判据**——判据必须是"跑一下就能看到"的，不写"完成了 X 功能"这种自欺的话。
+
+### P0 · 地基与契约（约 0.5 天）· 里程碑 M1 起点 ✅ 已完成 2026-10-28
+
+- [x] `git init` + `.gitignore`（`node_modules`、`target`、`.next`、`data/`、`.env`）+ 首次 commit
+- [x] 目录骨架按 §2 建好
+- [x] `docs/api.md` 写完（**先写契约再写代码**，前后端才能并行）
+- [x] `db/01-schema.sql` + `02-seed.sql`（9 个模板 / 4 个分类，覆盖 1/2/3 张图、只收 jpeg、1MB 上限）
+- [x] `docker-compose.yml` 骨架（mysql 起得来，web/api 在 `profiles: ["app"]` 下待 P7 补 Dockerfile）
+- [x] 后端空工程：`/api/health` 返回 200；`mvn -B test` 能跑
+- [x] 前端空工程：`pnpm build` / `lint` / `typecheck` 能过；`/api/**` 与 `/files/**` rewrite 打通
+- [x] 种子素材：`tools/gen_seed_assets.py` 程序化生成 9 封面 + 9 结果图 + 3 示例照片
+
+**完成判据**：`docker compose up -d mysql` 健康（✅ 9 templates / 4 categories）；
+`pnpm start` 后首页显示"Java 已连通"，且 `/api/health`、`/files/seed/covers/*.jpg` 经 3000 端口代理均 200（✅）。
+
+**实际与计划的偏差（已修正，后续阶段沿用）**：
+
+1. **代理路径**：原计划 `/api/backend/**` 前缀，实际改为 `/api/**` 直通——项目里没有也不需要 Next 的 route handler，不会冲突，URL 更干净。
+2. **本机端口**：8082 被 RocketMQ 容器（`8080-8082`）占用，本地 API 改用 **8090**（`spring-boot:run` 时代为 8091 验证）。
+3. **`mvn spring-boot:run` 在中文路径下不可用**：Spring Boot 插件的 fork 无法正确处理非 ASCII 路径，报 `ClassNotFoundException`。本地统一用 `java -jar`；已在 README 写明。
+4. **pnpm 12 的构建脚本拦截**：需 `frontend/pnpm-workspace.yaml` 的 `allowBuilds`（由 `pnpm approve-builds --all` 生成），否则 `esbuild`/`sharp`/`unrs-resolver` 装不出二进制。
+5. **不开 `output: "standalone"`**：它要求 Windows 符号链接权限，且会让本地与 Docker 产物走两条路径。Docker 侧改用常规多阶段构建。
+
+### P1 · 模板域（约 0.75 天）
+
+- [ ] 后端：`TemplateMapper` + 列表/分类/详情三个接口 + 统一响应体与错误码
+- [ ] 前端：模板列表页（分类 Tab + 卡片网格 + 封面懒加载）、详情页骨架
+- [ ] 三态 UI：加载骨架 / 空数据 / 请求失败可重试；模板不存在 → 404 页
+- [ ] 小屏（≤640px）可操作：Tab 横向滚动、卡片单列
+
+**完成判据**：切分类结果变化；点卡片进详情；断网/关后端后页面给出可读错误而非白屏。
+
+### P2 · 上传域（约 0.75 天）
+
+- [ ] 后端：multipart 接收 → 落盘 → 读宽高 → 写 `asset` → 返回 `{assetId,url,mimeType,sizeBytes}`；`/files/**` 静态映射
+- [ ] 后端：服务端校验 mime 白名单、大小上限、**能否真正解码**（防伪造扩展名）
+- [ ] 前端：`UploadSlot` 组件——按 `requiredImageCount` 渲染 N 个位；选择 / 预览 / 替换 / 移除；逐位独立的"上传中 / 失败可重试"
+- [ ] 前端：数量、类型、大小三重前端校验，错误文案具体（"第 2 张需为 JPG/PNG，当前为 WebP"）
+- [ ] 未传够时提交按钮禁用并说明缺几张
+
+**完成判据**：传 3 种非法文件（超大 / 错类型 / 假扩展名）都被拦且提示准确；关掉后端上传显示失败并能重试。
+
+### P3 · 提交与异步执行（约 1.5 天）· 后端核心
+
+- [ ] `POST /api/tasks`：复校 `assetIds`（数量=模板要求、归属当前用户、文件在盘上、类型大小合规）→ 建 task + task_asset → **202 立即返回**
+- [ ] `TaskPipeline`：`@Async` 线程池（core 4 / queue 50）跑 `ASSET_CHECK → GENERATE → FINALIZE`
+- [ ] 每步开始/结束都写库（`current_step`、`started_at`、`finished_at`）；步间 `sleep(可配)`
+- [ ] 失败即中断：写 `FAILED` + `failed_step` + `error_code` + 人话 `error_message`，后续步骤不执行
+- [ ] `GET /api/tasks/{id}` 与历史接口**只读**；终态用条件 UPDATE 保护
+- [ ] 进程内"已完成任务"短路：重复执行直接返回，不重复跑
+- [ ] **单测**：三步顺序、三个位置各自失败都中断、终态不可回退、查询不推进任务、提交校验用例
+
+**完成判据**：`mvn -B test` 全绿且测试里能断言"GENERATE 失败后 FINALIZE 未被调用"；curl 提交后立刻拿到 taskId，`sleep` 期间查接口能看到阶段在变。
+
+### P4 · 前端异步状态（约 1.5 天）· 前端核心
+
+- [ ] `useTaskStore`（Zustand）：`tasks: Record<taskId, {task, queryState, lastQueryError}>` —— **按 id 索引**，天然的互不串扰
+- [ ] `useTaskPoller`：维护"活跃 id 集合"，单一定时器；集合空 → 清定时器；`AbortController` 处理竞态；组件卸载 / 切换用户 → 取消并清空
+- [ ] 四维状态分离：`上传态 | 提交态 | 任务态 | 查询态`，其中**查询失败绝不写入 task.status**
+- [ ] 详情页右侧 History 卡片区：同屏可出现多个"处理中"与一个"失败"（对齐 UI-03 截图）
+- [ ] 受理成功瞬间：按钮从"提交中"恢复可点、清空上传位、新卡片入场并开始轮询
+- [ ] 历史页：时间倒序，状态徽标，成功显示结果缩略图（点开预览大图），失败显示"死在哪步 + 原因"
+- [ ] 查询异常：卡片显示"状态刷新失败 · 点击重试"，任务信息保留
+- [ ] **前端单测**：两任务交叉更新互不影响；查询 500 后任务仍为 PROCESSING；无未完成任务时不再发请求；终态后停止轮询
+
+**完成判据**：连点 3 次创建 3 个任务，三张卡进度独立；杀掉后端再恢复，卡片先报"刷新失败"再自动接上；刷新页面后未完成任务继续走到成功。
+
+### P5 · 失败与耗时模拟（约 0.5 天）
+
+- [ ] `SimulationSettings`（dev profile 专用 Bean）+ `POST /api/dev/simulation`：`{failStep, durationMsPerStep, applyTo: NEXT|TASK_ID}`
+- [ ] 受理任务时把当次配置**快照写入 task 行** → 并发任务各按自己的配置跑（这正是"两个处理中 + 一个失败"同屏的前提）
+- [ ] `docs/demo.md` 写清三步失败的复现命令、调快到 200ms / 调慢到 10s 的命令
+- [ ] 生产 profile 下该接口 404
+
+**完成判据**：按 demo.md 逐条粘贴执行，每一步结果与文档描述一致；连续触发同一阶段失败 3 次都稳定复现。
+
+### P6 · 身份与个人记录（约 0.5 天）
+
+- [ ] 极简方案：首次访问后端下发 `uid` HttpOnly cookie（UUID）+ `app_user` 建行；`HandlerInterceptor` 解析成 `CurrentUser`
+- [ ] 所有查询/提交按 `userId` 过滤；`assetIds` 归属校验（防越权）
+- [ ] 演示手段：`/api/dev/switch-user` 或清 cookie；README 写清"换浏览器 = 换用户"
+- [ ] 顶部显示当前用户 + "切换用户"入口（对齐 UI-04 账号入口的位置感，但不做设置页）
+
+**完成判据**：A 用户建 2 个任务，切到 B 用户历史为空；回到 A 仍在。
+
+### P7 · 工程交付（约 1.0 天）
+
+- [ ] 补齐测试：后端覆盖步骤顺序/中断/幂等/校验；前端覆盖隔离/查询异常/停止轮询
+- [ ] `.github/workflows/ci.yml`：`web`（pnpm install --frozen-lockfile → lint → `tsc --noEmit` → build）+ `api`（`mvn -B verify`）
+- [ ] `docker-compose.yml` 完整：mysql（`db/` 自动初始化）+ api（等 mysql healthy）+ web；healthcheck；`docker compose up --build` 冷启动即用
+- [ ] `README.md` 覆盖 R-13 七项（版本/结构/命令、配置与初始化、接口与状态机、演示步骤、身份方案、已完成与限制、部署回滚）+ AI 工作流 + 引用来源
+- [ ] `docs/ai-workflow.md` 用**本次实施过程本身**做例子（含计划、契约、被修正的问题）
+
+**完成判据**：删掉本地 `node_modules`/`target`/`data` 后 `docker compose up --build` 冷启动一次通过，按 README 走完五步演示。
+
+### P8 · 收尾验证（约 0.5 天）
+
+- [ ] 按"验收者视角"重走：只读 README 能否跑起来
+- [ ] 清点 §6 矩阵每一行为"已验证 / 未验证"，未验证项如实写进 README「已知限制」
+- [ ] 打 tag `v1.0.0`，README 顶部写明**验收 commit hash**
+- [ ] 检查无密钥、无大文件、无 `data/` 残留入库
+
+**完成判据**：`git clone` 到干净目录 → compose 起来 → 五个演示全通。
+
+---
+
+## 6. 需求追溯矩阵（防止漏项）
+
+| 需求 | 落点 | 验证证据 |
+|---|---|---|
+| R-01 栈与职责 | P0/P3/P4 | compose 三服务；接口清单；DB 有 task 表 |
+| R-02 列表与数据 | P1 | 分类切换截图；seed.sql |
+| R-03 详情/上传/校验 | P2 | 三类非法文件被拦；服务端校验单测 |
+| R-04 受理与异步 | P3 | curl 202 立刻返回；关页面任务照跑 |
+| R-05 多步骤与查询 | P3 | 单测断言顺序；查接口不改状态 |
+| R-06 失败与模拟 | P5 | demo.md 逐条复现 |
+| R-07 状态表达与异常 | P4 | 前端单测：500 ≠ 任务失败 |
+| R-08 多任务与生命周期 | P4 | 三任务独立；停止轮询单测 |
+| R-09 刷新恢复与记录 | P4 | 刷新后继续跟踪；历史页 |
+| R-10 身份与个人记录 | P6 | 切用户结果隔离 |
+| R-11 视觉与可用性 | P1/P2/P4 | 键盘可达、label、小屏可操作 |
+| R-12 CI 与测试 | P7 | Actions 绿；两份测试 |
+| R-13 材料与说明 | P7/P8 | README + docs |
+| R-14 容器交付 | P7 | 冷启动验证 |
+
+---
+
+## 7. 关键设计决策（会被问"为什么这么设计"）
+
+1. **异步用进程内线程池，不用 MQ**。题面明确不强制 MQ；单机场景下线程池足够，且能把"受理 / 执行 / 落库"三件事的边界讲清楚。代价：进程重启会丢在跑的任务 —— 这正是题面允许不做的"重启恢复"，写进已知限制。
+2. **查询接口绝对只读**。任务的推进只由 `TaskPipeline` 写库，查询路径上不出现任何写操作。这条是 R-05 的明文要求，也是很多实现翻车的地方。
+3. **状态用"条件 UPDATE"保证终态不可回退**，而不是只靠代码里 if 判断——数据库层面兜底，单测更容易写。
+4. **前端不直连后端**，走 Next rewrite 代理：零 CORS，容器内外一致，`<img>` 也能走同一路径。
+5. **任务状态按 id 存在 Map 里，且拆成四维**。一个 `status` 字段同时表示"上传中/提交中/处理中/查询失败"必然串味，这是 R-07 的核心考点。
+6. **模拟配置在任务受理时快照入行**，而不是全局单例——否则无法做到"同时演示一个成功、一个失败"，而这恰好是 UI-03 的画面。
+7. **结果图先用预置映射**（方案 A），主干通了再考虑在 FINALIZE 里真合成（方案 B）。先保证闭环可交付，再谈说服力。
+
+---
+
+## 8. 演示脚本草案（P5/P7 落地为 docs/demo.md）
+
+### 8.1 成功路径
+列表 → 选「旅行明信片」（2 张图）→ 传 2 张 → 提交 → 3 张卡里新卡从"等待"走到"处理中·素材检查→生成→结果整理"→ 出结果图。
+
+### 8.2 指定阶段失败
+```bash
+curl -X POST localhost:8082/api/dev/simulation \
+  -H 'Content-Type: application/json' \
+  -d '{"failStep":"GENERATE","durationMsPerStep":3000,"applyTo":"NEXT"}'
+```
+下一个任务必在"模拟生成"失败，卡片显示"生成服务响应超时"，且**没有结果图**。
+
+### 8.3 调耗时
+同一接口传 `durationMsPerStep: 10000`，便于观察"处理中"与排队；传 `200` 便于快速跑通。
+
+### 8.4 多任务与刷新
+设置 `applyTo: NEXT` 失败一次 → 立刻连提 3 次 → 前两个成功、第三个失败同屏 → 中途 `F5` → 未完成者继续跟踪。
+
+### 8.5 身份
+顶栏"切换用户"→ 历史清空 → 切回 → 记录仍在。
+
+---
+
+## 9. 本地运行约定
+
+compose 里三个端口一律写成 `${VAR:-默认值}`，**默认值就是标准端口**（别人机器零配置即用），本机靠不提交的 `.env` 覆盖：
+
+| 用途 | compose 写法 | 默认 | 本机 `.env` 覆盖（3306/8080 已被占） |
+|---|---|---|---|
+| MySQL | `${MYSQL_PORT:-3306}:3306` | 3306 | `MYSQL_PORT=3307` |
+| API | `${API_PORT:-8080}:8080` | 8080 | `API_PORT=8082` |
+| Web | `${WEB_PORT:-3000}:3000` | 3000 | 不用改 |
+
+- 本地起后端：`$env:JAVA_HOME='E:\JDK21.0.10'; mvn -f backend/pom.xml spring-boot:run`
+- 本地起前端：`pnpm --dir frontend dev`，`.env.local` 写 `BACKEND_URL=http://localhost:8082`
+- `.env.example` 入库（全默认值 + 注释），`.env` 与 `.env.local` 进 `.gitignore`。
+
+---
+
+## 10. 风险与对策
+
+| 风险 | 影响 | 对策 |
+|---|---|---|
+| PATH 上是 JDK 25 | 编译/运行诡异错误 | 全局固定 `JAVA_HOME`，`release=21`，Dockerfile 用 temurin 21 |
+| 3306/8080 被占 | 本地起不来 | 端口变量化；本地 `.env` 走 3307/8082；容器命名加 `tujang-` 前缀 |
+| pnpm 12 / Next 15 版本漂移 | 装不上或 API 变化 | P0 一次锁定并提交 lockfile，之后不随意升级 |
+| 前端状态越写越乱 | R-07/R-08 丢分 | 先写测试骨架（任务隔离、查询异常、停止轮询）再写 hook |
+| 只在本地跑通、容器里跑不通 | 运行验收记"未验证" | **P3 结束就开始做 compose 雏形**，不等 P7 |
+| 演示靠手速、不可复现 | 面试演示翻车 | 模拟配置落库 + demo.md 逐条命令 |
+| 想做的东西太多 | 交付不完整 | 严格执行 §11 不做清单 |
+
+---
+
+## 11. 范围外（明确不做，写进 README）
+
+- 真实 AI / 图像处理 / 视频；真实对象存储（本地目录 + volume）
+- MQ / Redis / 集群 / 分布式调度；SSE / WebSocket
+- 模板 CRUD 后台、模板可视化编辑
+- 积分 / 会员 / 支付 / 第三方登录 / 国际化 / 多区域部署
+- 失败任务重试、任务删除、结果下载、任务受理幂等与断点续跑（README 讨论取舍即可）
+- 服务重启后自动恢复执行（README 明说边界）
+- E2E 浏览器测试、真实公网部署、自动发布
+
+---
+
+## 12. 里程碑与提交约定
+
+| 里程碑 | 含阶段 | 状态 | 验收点 |
+|---|---|---|---|
+| M1 骨架通 | P0–P1 | 待开始 | 首页展示 Java 数据，代理链路通 |
+| M2 能提交 | P2–P3 | 待开始 | curl 提交 + 阶段推进 + 单测绿 |
+| M3 闭环完整 | P4–P6 | 待开始 | 三任务并行、刷新恢复、切用户隔离 |
+| M4 可交付 | P7–P8 | 待开始 | 冷启动 compose 一次通过 + README 齐全 |
+
+约定：每个里程碑结束打 tag（`m1`…`m4`）、更新本文件状态列、commit message 用 `feat(scope): ...` 格式，便于 README 记录验收 commit。
+
+**总预估：约 7–7.5 个工作日**（P0 0.5 + P1 0.75 + P2 0.75 + P3 1.5 + P4 1.5 + P5 0.5 + P6 0.5 + P7 1.0 + P8 0.5）。
+
+---
+
+## 13. 下一步
+
+从 **P0** 开始：`git init` → 建目录 → 写 `docs/api.md` 与 `db/*.sql` → 起 compose 的 MySQL → 前后端空工程各跑通一次构建。
+契约先行的原因：P3 的后端和 P4 的前端可以对着同一份 `docs/api.md` 并行推进，避免"字段对不上"反复返工。
