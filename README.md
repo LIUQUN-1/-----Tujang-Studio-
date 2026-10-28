@@ -40,6 +40,8 @@ POST /api/tasks ──> 202 + taskId（不等制作完成）
 > P0 已验证：`/api/health` 与 `/files/seed/**` 经 Next 代理可达；页面服务端直连 Java 显示"已连通"；
 > MySQL 初始化出 9 个模板 / 4 个分类。
 
+![P0 骨架页面](docs/p0-screenshot.png)
+
 ---
 
 ## 技术栈
