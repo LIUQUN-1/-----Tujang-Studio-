@@ -435,9 +435,13 @@ B 的 Cookie 访问 A 的任务 → 403 `TASK_FORBIDDEN`；连续 5 次"全新�
 7. **演示账号由代码创建，不写 SQL**：BCrypt 哈希带盐，写死在 seed 里既不可校验也不可读；
    交给与注册完全相同的 `AuthService.register` 创建，行为和真实注册一致。
    `@Profile("dev")` 保证生产不会凭空出现一个 demo 账号。
-8. **上线时踩到自己埋的坑**：`AuthService.register` 里 `userMapper.insert` 的参数顺序写错
-   （哈希与展示名互换），单测直接抓到——这类错误肉眼看代码很难发现，是"把参数按名字写进
-   ArgumentCaptor 断言"救回来的。
+8. **请求体解析失败曾落到 500 兜底**：用 curl 发了一个少括号的 JSON，返回的是"服务器开小差了"。
+   `HttpMessageNotReadableException` 没有被处理，落进了最后的 500 分支——客户端错误被报成服务端挂了，
+   调试时还误导过我一次。已补两条 400 处理（非法 JSON / 缺 multipart 部分）并加
+   `GlobalExceptionHandlerTest` 守住这个行为。
+9. **参数顺序写错，被单测抓到**：`AuthService.register` 里 `userMapper.insert` 的哈希与展示名传反了。
+   这类错误肉眼看代码很难发现，是"把参数按名字写进 ArgumentCaptor 断言"救回来的——
+   如果只断言"insert 被调用过"，这个 bug 会一路带到登录失败。
 
 ---
 
@@ -576,6 +580,7 @@ P0–P9 全部完成，交付物见 README，验收版本为 tag `v1.1.0`。
 4. **浏览器 E2E**：Playwright 跑一遍"上传 → 提交 → 轮询 → 刷新"，补上现在靠人眼确认的那段。
 
 不做清单见 §11；每一条都不是遗漏，而是明确的范围决定。
+
 
 
 

@@ -4,7 +4,7 @@
 > 小影科技 2027 校招题。
 
 **验收版本：tag `v1.1.0`**（`git rev-list -n 1 v1.1.0` 取完整 commit hash）
-· 账号登录（注册 / 登录 / 退出，BCrypt + 会话表）· 后端 61 例 + 前端 47 例测试
+· 账号登录（注册 / 登录 / 退出，BCrypt + 会话表）· 后端 63 例 + 前端 47 例测试
 · 冷启动验证见 [§7.1.1](#711-容器冷启动实测记录) 与 [§7.1.2](#712-干净目录克隆实测验收者视角)
 · 需求对照与"已验证 / 未验证"见 [§7.1](#71-需求对照)
 
@@ -519,7 +519,7 @@ Cookie 转发给 Java。登录态写在 Cookie 里、由 Java 校验，Next 只�
 
 ### 6.1 测试清单
 
-后端 61 例（`mvn -B -f backend/pom.xml test`，全部是 Mockito 单测，不需要数据库）：
+后端 63 例（`mvn -B -f backend/pom.xml test`，全部是 Mockito / standalone MockMvc 单测，不需要数据库）：
 
 | 测试类 | 例数 | 覆盖 |
 |---|---|---|
@@ -532,6 +532,7 @@ Cookie 转发给 Java。登录态写在 Cookie 里、由 Java 校验，Next 只�
 | `ImageInspectorTest` | 5 | 魔数识别与损坏图片 |
 | `SeedResultProducerTest` | 3 | 结果图挑选与复制 |
 | `SessionTokensTest` | 3 | token 唯一/URL 安全、SHA-256 摘要稳定且不含原文 |
+| `GlobalExceptionHandlerTest` | 2 | 请求体不是合法 JSON / 字段类型不对 → 400，而不是 500 |
 | `HealthControllerTest` | 1 | 健康检查 |
 
 前端 47 例（`pnpm --dir frontend test`）：
@@ -582,7 +583,7 @@ UI 交互人工确认并留截图（`docs/*.png`）。
 | R-09 刷新恢复与记录 | 服务端首屏 + 客户端接管轮询；历史页含结果缩略图 | ✅ | 处理中按 F5 后仍在跟踪并自行完成（`docs/p9-history.png`） |
 | R-10 身份与个人记录 | **账号密码登录**（BCrypt + 会话表）+ 按人隔离 | ✅ | A 有 1 条 / B 有 0 条 / 用密码重新登录 A 仍有 1 条；B 访问 A 的任务 403；退出后 `/api/me` 401 |
 | R-11 视觉与可用性 | 桌面主界面、390px 可操作、语义标签、全局 `:focus-visible` | ⚠️ | 桌面与 390px 截图；上传位/图标按钮均有 `aria-label`；**Tab 顺序未逐键走查** |
-| R-12 CI 与关键测试 | 前端 47 例 + 后端 61 例；三个 CI job | ⚠️ | 测试与构建命令本地全绿；**Actions 未在 GitHub 上真实调度过**（仓库无远端） |
+| R-12 CI 与关键测试 | 前端 47 例 + 后端 63 例；三个 CI job | ⚠️ | 测试与构建命令本地全绿；**Actions 未在 GitHub 上真实调度过**（仓库无远端） |
 | R-13 材料与说明 | 本 README 七项 + `docs/` | ✅ | 见目录与各节 |
 | R-14 容器交付 | `docker compose up --build` 三服务 | ✅ | P7 与 P8 两次冷启动，含干净目录 `git clone` 后从零构建 |
 
@@ -805,4 +806,5 @@ Get-NetTCPConnection -LocalPort 8090 -State Listen | ForEach-Object { Stop-Proce
 - [docs/ai-workflow.md](docs/ai-workflow.md) — AI 工作流说明
 - [frontend/src/store/task-store.ts](frontend/src/store/task-store.ts) — 前端异步状态的核心
 - [backend/src/main/java/com/tujang/studio/service/TaskPipeline.java](backend/src/main/java/com/tujang/studio/service/TaskPipeline.java) — 后台三步执行的核心
+
 

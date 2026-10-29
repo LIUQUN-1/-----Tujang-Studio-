@@ -4,11 +4,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import com.tujang.studio.auth.NotAuthenticatedException;
@@ -41,6 +44,28 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
         return ResponseEntity.badRequest()
                 .body(ErrorResponse.of("VALIDATION_FAILED", "请求参数格式不正确：" + ex.getName()));
+    }
+
+    /**
+     * 请求体不是合法 JSON（少括号、类型不对）。
+     *
+     * <p>这是**客户端**的问题。不处理的话会落进最后的 500 兜底，客户端拿到"服务器开小差了"，
+     * 既误导又难看——调试时我自己就被这条误导过一次。
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleUnreadableBody(HttpMessageNotReadableException ex) {
+        return ResponseEntity.badRequest()
+                .body(ErrorResponse.of("VALIDATION_FAILED", "请求体不是合法的 JSON"));
+    }
+
+    /** 缺少必需的请求参数或 multipart 部分（例如上传时没带 file）。 */
+    @ExceptionHandler({MissingServletRequestParameterException.class, MissingServletRequestPartException.class})
+    public ResponseEntity<ErrorResponse> handleMissingPart(Exception ex) {
+        String name = ex instanceof MissingServletRequestParameterException p
+                ? p.getParameterName()
+                : ((MissingServletRequestPartException) ex).getRequestPartName();
+        return ResponseEntity.badRequest()
+                .body(ErrorResponse.of("VALIDATION_FAILED", "缺少请求参数：" + name));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
