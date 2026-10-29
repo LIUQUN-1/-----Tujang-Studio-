@@ -69,12 +69,15 @@ class TaskServiceTest {
     @Mock
     private TaskPipeline pipeline;
 
+    @Mock
+    private SimulationRegistry simulationRegistry;
+
     private TaskService taskService;
 
     @BeforeEach
     void setUp() {
         taskService = new TaskService(taskMapper, assetMapper, templateService,
-                storageService, currentUser, pipeline, new ObjectMapper());
+                storageService, currentUser, pipeline, simulationRegistry, new ObjectMapper());
     }
 
     private static TemplateDetailDto template() {
@@ -194,8 +197,31 @@ class TaskServiceTest {
     }
 
     @Test
-    @DisplayName("查询他人任务：403 TASK_FORBIDDEN")
-    void rejectsReadingOtherUsersTask() {
+    @DisplayName("受理时把模拟配置快照写进任务行（P5）")
+    void writesSimulationSnapshot() {
+        givenTemplateAndUser();
+        givenUsableAssets();
+        when(simulationRegistry.take())
+                .thenReturn(new SimulationRegistry.Snapshot("GENERATE", "{\"GENERATE\":3000}"));
+        when(taskMapper.findById(anyString())).thenReturn(Optional.of(new TaskRow(
+                "task-1", USER, TEMPLATE, "旅行明信片", "/c.jpg", TaskStatus.PENDING,
+                null, null, null, null, null, null, null, "GENERATE", "{\"GENERATE\":3000}",
+                LocalDateTime.now(), null, null, LocalDateTime.now())));
+        when(taskMapper.findInputs(anyString())).thenReturn(List.of());
+
+        var dto = taskService.submit(new SubmitTaskRequest(TEMPLATE, List.of("a1", "a2")));
+
+        ArgumentCaptor<TaskRow> inserted = ArgumentCaptor.forClass(TaskRow.class);
+        verify(taskMapper).insert(inserted.capture());
+        assertThat(inserted.getValue().simFailStep()).isEqualTo("GENERATE");
+        assertThat(inserted.getValue().simDurations()).isEqualTo("{\"GENERATE\":3000}");
+        // 快照同时回显给前端，便于确认"这次跑的是哪个剧本"
+        assertThat(dto.simulation()).isNotNull();
+        assertThat(dto.simulation().failStep()).isEqualTo("GENERATE");
+    }
+
+    @Test
+    @DisplayName("查询他人任务：403 TASK_FORBIDDEN")    void rejectsReadingOtherUsersTask() {
         when(currentUser.currentUserId()).thenReturn(USER);
         when(taskMapper.findById("task-9")).thenReturn(Optional.of(new TaskRow(
                 "task-9", "someone-else", TEMPLATE, "旅行明信片", "/c.jpg",

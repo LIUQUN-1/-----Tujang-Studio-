@@ -6,6 +6,11 @@ spring:
   application:
     name: tujang-studio-api
 
+  # 没显式指定 profile 时按 dev 跑：本地 java -jar / IDE 启动都能用上模拟控制接口。
+  # 想验证"生产环境没有这些接口"，用 SPRING_PROFILES_ACTIVE=prod 启动即可（见 docs/demo.md）。
+  profiles:
+    default: dev
+
   datasource:
     url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:tujang}?useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=utf8&serverTimezone=UTC
     username: ${DB_USER:tujang}

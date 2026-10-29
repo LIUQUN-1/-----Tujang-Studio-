@@ -51,6 +51,7 @@ public class TaskService {
     private final StorageService storageService;
     private final CurrentUserProvider currentUser;
     private final TaskPipeline pipeline;
+    private final SimulationRegistry simulationRegistry;
     private final ObjectMapper objectMapper;
 
     public TaskService(
@@ -60,6 +61,7 @@ public class TaskService {
             StorageService storageService,
             CurrentUserProvider currentUser,
             TaskPipeline pipeline,
+            SimulationRegistry simulationRegistry,
             ObjectMapper objectMapper) {
         this.taskMapper = taskMapper;
         this.assetMapper = assetMapper;
@@ -67,6 +69,7 @@ public class TaskService {
         this.storageService = storageService;
         this.currentUser = currentUser;
         this.pipeline = pipeline;
+        this.simulationRegistry = simulationRegistry;
         this.objectMapper = objectMapper;
     }
 
@@ -84,7 +87,15 @@ public class TaskService {
         String userId = currentUser.currentUserId();
         String taskId = Ulid.next();
 
-        taskMapper.insert(TaskRow.pending(taskId, userId, template.id(), null, null));
+        // 模拟配置在受理时快照：并发任务各按自己的剧本跑（P5）。生产环境 take() 恒为 null。
+        SimulationRegistry.Snapshot simulation = simulationRegistry.take();
+
+        taskMapper.insert(TaskRow.pending(
+                taskId,
+                userId,
+                template.id(),
+                simulation == null ? null : simulation.failStep(),
+                simulation == null ? null : simulation.durationsJson()));
         for (int i = 0; i < assetIds.size(); i++) {
             taskMapper.insertTaskAsset(taskId, assetIds.get(i), i);
         }

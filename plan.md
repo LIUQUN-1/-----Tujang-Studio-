@@ -286,14 +286,27 @@ PENDING ──> PROCESSING(ASSET_CHECK) ──> PROCESSING(GENERATE) ──> PRO
 3. **结果图从大图改为 128×84 缩略图 + 尺寸信息**：历史列表里把 4:3 图拉满宽会变成一条横幅，信息密度反而更低。
 4. 详情页与历史页共用 `TaskList`，差别只有 `showTemplate` 与空态文案。
 
-### P5 · 失败与耗时模拟（约 0.5 天）
+### P5 · 失败与耗时模拟（约 0.5 天）✅ 已完成 2026-10-29
 
-- [ ] `SimulationSettings`（dev profile 专用 Bean）+ `POST /api/dev/simulation`：`{failStep, durationMsPerStep, applyTo: NEXT|TASK_ID}`
-- [ ] 受理任务时把当次配置**快照写入 task 行** → 并发任务各按自己的配置跑（这正是"两个处理中 + 一个失败"同屏的前提）
-- [ ] `docs/demo.md` 写清三步失败的复现命令、调快到 200ms / 调慢到 10s 的命令
-- [ ] 生产 profile 下该接口 404
+- [x] `SimulationRegistry`（内存态）+ `SimulationSource` 快照：受理任务时把配置写进 task 行
+- [x] `POST/GET /api/dev/simulation`：`{failStep, perStepDurations, applyTo}`，仅 `@Profile("dev")`
+- [x] 生产 profile 下 bean 不存在 → 路径自然 404，业务代码里没有 profile 判断
+- [x] `docs/demo.md`：三步失败、调快/调慢、多任务同屏、刷新恢复、生产 404 的逐条命令
+- [x] 单测 `SimulationRegistryTest` 6 例（NEXT 一次性 / ALL 持续 / 仅耗时 / 清空）
 
-**完成判据**：按 demo.md 逐条粘贴执行，每一步结果与文档描述一致；连续触发同一阶段失败 3 次都稳定复现。
+**完成判据**：实测
+`NEXT + GENERATE` → 任务 1 失败(`GENERATE_TIMEOUT`)、任务 2 自动恢复正常成功（一次性生效）；
+`ALL + ASSET_CHECK` → 连续两个任务都失败在同一阶段（持续生效）；
+`FINALIZE` → 前两步成功、最后一步失败且无结果；
+耗时 `1200/4000/1200` → 阶段切换发生在 0.0s / 1.2s / 5.3s / 6.5s；
+`SPRING_PROFILES_ACTIVE=prod` → `GET|POST /api/dev/simulation` 均 404，`/api/templates` 仍 200。
+
+**实际与计划的偏差（已修正，后续阶段沿用）**：
+
+1. **`spring.profiles.default: dev`**：不显式指定 profile 时按 dev 跑，这样 `java -jar` 和 IDE 启动都能用模拟接口；
+   要验证"生产没有这些接口"就显式 `SPRING_PROFILES_ACTIVE=prod`。已在 `docs/demo.md` 写明。
+2. **`applyTo` 默认 `NEXT`**（不是 ALL）：默认一次性可以避免"设了一次失败之后全失败"这种难排查的演示事故。
+3. **配置只存在内存**，进程重启即失效——它是开发工具不是业务状态，已在文档说明。
 
 ### P6 · 身份与个人记录（约 0.5 天）
 
