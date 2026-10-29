@@ -18,6 +18,42 @@ env:
   NEXT_TELEMETRY_DISABLED: "1"
 
 jobs:
+  # 镜像构建很贵（两份完整冷构建，8-12 分钟），但只在改到"容器相关文件"时
+  # 才可能失败：Dockerfile 本身、构建上下文清单、影响产物的打包配置。
+  # 普通源码改动已经由 web / api 覆盖，没必要再跑一遍镜像。
+  #
+  # 不能把 paths 写在 on.pull_request 上：那会让不匹配的 PR 根本不产生 check run，
+  # 一旦 images 是 required check，PR 会卡在 "Expected — Waiting for status"。
+  # 用 job 级 if 跳过则 check 以 skipped 结束，不影响合并。
+  changes:
+    name: 变更探测 · 是否需要构建镜像
+    runs-on: ubuntu-latest
+    outputs:
+      docker: ${{ steps.filter.outputs.docker }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # paths-filter 在 push 事件下要自己比对 base commit，需要完整历史
+          fetch-depth: 0
+
+      # 手动触发时没有"改了什么"可判：跳过探测，让 images 按 workflow_dispatch 直接跑
+      - uses: dorny/paths-filter@v3
+        id: filter
+        if: github.event_name != 'workflow_dispatch'
+        with:
+          filters: |
+            docker:
+              - 'backend/Dockerfile'
+              - 'frontend/Dockerfile'
+              - '**/.dockerignore'
+              - 'docker-compose.yml'
+              - 'backend/pom.xml'
+              - 'frontend/package.json'
+              - 'frontend/pnpm-lock.yaml'
+              - 'frontend/pnpm-workspace.yaml'
+              - 'frontend/next.config.ts'
+              - 'frontend/tsconfig.json'
+
   web:
     name: Web · lint / typecheck / test / build
     runs-on: ubuntu-latest
@@ -87,6 +123,9 @@ jobs:
 
   images:
     name: Docker · 两个镜像都能构建
+    # 只在改动触及容器产物时跑；手动触发时无条件跑（方便验证 Dockerfile 改动）
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.docker == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
 

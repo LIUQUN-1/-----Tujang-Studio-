@@ -570,9 +570,15 @@ UI 交互人工确认并留截图（`docs/*.png`）。
 
 | 任务 | 内容 |
 |---|---|
+| `changes` | 用 `dorny/paths-filter` 判断本次改动是否触及容器产物，结论传给 `images` |
 | `web` | `pnpm install --frozen-lockfile` → `lint` → `tsc --noEmit` → `test` → `build` |
 | `api` | `mvn -B verify`（测试 + 打包），上传 surefire 报告 |
-| `images` | 用 buildx 构建前后端镜像（不推送），验证 Dockerfile 与构建上下文没坏 |
+| `images` | 改动触及 Dockerfile / `.dockerignore` / `pom.xml` / lockfile / `next.config.ts` / compose 时，用 buildx 构建前后端镜像（不推送），验证 Dockerfile 与构建上下文没坏；手动触发时无条件跑 |
+
+> `images` 按需触发是成本考虑：一次完整构建 8-12 分钟，而它只在改到容器相关文件时才可能失败——
+> 普通源码改动已由 `web` / `api` 覆盖。`paths` 刻意没写在 `on.pull_request` 上：那会让不匹配的
+> PR 根本不产生 check run，`images` 一旦被设为 required check 就会永远停在 "Expected" 卡住合并；
+> 用 `changes` job + job 级 `if` 跳过，check 以 skipped 结束，不影响合并。
 
 > CI 在 GitHub 上运行；本地无法复现其托管环境，因此 `images` 任务的结果以 CI 日志为准。
 
@@ -598,7 +604,7 @@ UI 交互人工确认并留截图（`docs/*.png`）。
 | R-09 刷新恢复与记录 | 服务端首屏 + 客户端接管轮询；历史页含结果缩略图 | ✅ | 处理中按 F5 后仍在跟踪并自行完成（`docs/p9-history.png`） |
 | R-10 身份与个人记录 | **账号密码登录**（BCrypt + 会话表）+ 按人隔离 | ✅ | A 有 1 条 / B 有 0 条 / 用密码重新登录 A 仍有 1 条；B 访问 A 的任务 403；退出后 `/api/me` 401 |
 | R-11 视觉与可用性 | 桌面主界面、390px 可操作、语义标签、全局 `:focus-visible` | ⚠️ | 桌面与 390px 截图；上传位/图标按钮均有 `aria-label`；**Tab 顺序未逐键走查** |
-| R-12 CI 与关键测试 | 前端 47 例 + 后端 67 例；三个 CI job | ⚠️ | 测试与构建命令本地全绿；**Actions 未在 GitHub 上真实调度过**（仓库无远端） |
+| R-12 CI 与关键测试 | 前端 47 例 + 后端 67 例；四个 CI job（`images` 按需触发） | ⚠️ | 测试与构建命令本地全绿；**Actions 未在 GitHub 上真实调度过**（仓库无远端） |
 | R-13 材料与说明 | 本 README 七项 + `docs/` | ✅ | 见目录与各节 |
 | R-14 容器交付 | `docker compose up --build` 三服务 | ✅ | P7 与 P8 两次冷启动，含干净目录 `git clone` 后从零构建 |
 
