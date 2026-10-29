@@ -42,6 +42,15 @@ export type AssetDto = {
   createdAt: string;
 };
 
+/** 当前身份（docs/api.md §5.1） */
+export type Me = {
+  userId: string;
+  displayName: string;
+  createdAt: string | null;
+  /** 后端是否跑在 dev profile：前端据此显示"切换用户"这类开发入口 */
+  devTools: boolean;
+};
+
 export type TaskStatus = "PENDING" | "PROCESSING" | "SUCCEEDED" | "FAILED";
 
 export type TaskStepCode = "ASSET_CHECK" | "GENERATE" | "FINALIZE";

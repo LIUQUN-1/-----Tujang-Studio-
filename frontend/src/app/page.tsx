@@ -3,7 +3,7 @@ import { Suspense } from "react";
 
 import { CategoryTabs } from "@/components/category-tabs";
 import { TemplateCard, TemplateCardSkeleton } from "@/components/template-card";
-import { getCategories, getTemplates } from "@/lib/api";
+import { getCategories, getTemplates } from "@/lib/server-api";
 
 // 数据来自 Java 且随时可能变化，不做静态预渲染
 export const dynamic = "force-dynamic";

@@ -284,15 +284,50 @@
 
 ## 5. 身份
 
+身份就是一个 Cookie，没有账号密码：
+
+| 项 | 值 |
+|---|---|
+| 名字 | `tujang_uid` |
+| 值 | `app_user.id`（UUID） |
+| 属性 | `HttpOnly; SameSite=Lax; Path=/; Max-Age=30d`（生产应再加 `Secure`） |
+| 谁发放 | Next 中间件在首次访问时生成；后端在"Cookie 缺失/格式非法"时兜底生成 |
+
+服务端解析规则（`UserService`）：
+
+1. Cookie 是合法 UUID 且库里有 → 就是这个用户；
+2. Cookie 是合法 UUID 但库里没有 → **采用该 id 建行**（前端预生成的场景，避免多建空用户）；
+3. 没有或格式非法 → 服务端新建一个，并通过 `Set-Cookie` 发回。
+
+> **这不是认证**：知道对方 UUID 就能看到对方的记录。本题不要求登录体系，
+> 这里只保证"记录按人隔离 + id 不可猜"，边界在 README 里写明。
+
 ### 5.1 `GET /api/me`
 
 ```json
-{ "userId": "0f0c1b3e-...", "displayName": "设计师 7F2A", "createdAt": "..." }
+{
+  "userId": "0f0c1b3e-0000-4000-8000-000000000001",
+  "displayName": "设计师 7F2A",
+  "createdAt": "2026-10-28T13:30:15.123Z",
+  "devTools": true
+}
 ```
+
+`devTools` 表示当前后端是否跑在 `dev` profile——前端据此显示「切换用户」这类开发入口；
+生产环境为 `false`，入口不出现。
 
 ### 5.2 `POST /api/dev/users/switch`（仅 dev）
 
-清空当前身份、下发新用户，返回 5.1 结构。用于演示"个人记录隔离"。
+请求体可选：
+
+```json
+{ "userId": "0f0c1b3e-..." }
+```
+
+- 不传或目标不存在 → 新建一个用户并下发新 Cookie（用于演示"换一个人用"）；
+- 传了已存在的 `userId` → 切回该用户（前端「切回上一个」用它）。
+
+响应为 5.1 结构，同时 `Set-Cookie` 新身份。生产 profile 下该路径 404。
 
 ---
 

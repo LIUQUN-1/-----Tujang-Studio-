@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 
 import { SiteHeader } from "@/components/site-header";
 import { TaskWatcher } from "@/components/task-watcher";
+import { getMe } from "@/lib/server-api";
+import type { Me } from "@/lib/types";
 
 import "./globals.css";
 
@@ -19,13 +21,22 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // 身份由中间件保证存在；后端不可用时降级为"未登录"，不让整页报错
+  let me: Me | null = null;
+  try {
+    me = await getMe();
+  } catch (err) {
+    console.error("[layout] getMe failed", err);
+    me = null;
+  }
+
   return (
     <html lang="zh-CN">
       <body className="min-h-screen">
         {/* 全局任务观察者：刷新恢复 + 持续跟踪未完成任务，不渲染任何内容 */}
         <TaskWatcher />
-        <SiteHeader />
+        <SiteHeader user={me} />
         <main className="mx-auto w-full max-w-[1400px] px-5 py-8 sm:px-8 sm:py-10">{children}</main>
       </body>
     </html>

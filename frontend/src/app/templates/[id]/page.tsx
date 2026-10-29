@@ -2,10 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 
-import { getTemplate } from "@/lib/api";
 import { ApiError } from "@/lib/api";
 import { formatBytes, formatMimeTypes } from "@/lib/format";
-import { listTasksServer } from "@/lib/tasks";
+import { getTemplate, listTasksServer } from "@/lib/server-api";
 import { TemplateComposer } from "@/components/template-composer";
 import { TaskList } from "@/components/task-list";
 

@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { TaskList } from "@/components/task-list";
-import { listTasksServer } from "@/lib/tasks";
+import { listTasksServer } from "@/lib/server-api";
 
 export const dynamic = "force-dynamic";
 

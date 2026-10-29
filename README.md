@@ -33,7 +33,7 @@ POST /api/tasks ──> 202 + taskId（不等制作完成）
 | P3 | 提交受理 + 三步异步执行 + 状态查询 | ✅ 完成 |
 | P4 | 前端任务状态机、轮询生命周期、历史与刷新恢复 | ✅ 完成 |
 | P5 | 失败注入与耗时调节 | ✅ 完成 |
-| P6 | 用户身份与个人记录 | ⬜ 待开始 |
+| P6 | 用户身份与个人记录 | ✅ 完成 |
 | P7 | 测试、CI、容器交付、README 定稿 | ⬜ 待开始 |
 | P8 | 冷启动验收与收尾 | ⬜ 待开始 |
 
@@ -167,6 +167,41 @@ mysql --default-character-set=utf8mb4 -u root -p < db/02-seed.sql
 
 ---
 
+## 身份与个人记录
+
+方案是**「Cookie 即身份」**，没有账号密码：
+
+| 项 | 值 |
+|---|---|
+| Cookie | `tujang_uid`，值就是 `app_user.id`（UUID v4） |
+| 属性 | `HttpOnly; SameSite=Lax; Path=/; Max-Age=30d`（生产部署应再加 `Secure`） |
+| 发放 | Next 中间件首次访问时生成；后端在 Cookie 缺失/格式非法时兜底生成 |
+| 解析 | `CurrentUserInterceptor` → `CurrentUserHolder`（ThreadLocal）→ `CurrentUserProvider` |
+| 隔离 | 所有查询/提交都按 `userId` 过滤；访问他人任务是 `403 TASK_FORBIDDEN` |
+
+**为什么由 Next 中间件先发 Cookie**：服务端组件渲染期间不能写 Cookie，而历史页需要拿身份
+去后端取数据。中间件把 id 同时写进「本次请求」与「响应」，SSR 的 fetch 就能带上它；
+后端发现这个 id 在库里不存在时**采用它**建行（幂等写入），因此既不会给每个 SSR 请求多建空用户，
+也不会出现"浏览器一个身份、SSR 另一个身份"。
+
+**边界（刻意如此，不是遗漏）**：这不是认证。知道对方 UUID 就能读到对方的记录。
+本题不要求登录体系，这里只保证"记录按人隔离 + id 不可猜"。
+若要变成真认证，最小改动是加凭据表并把拦截器换成校验签名 Cookie——
+业务层只依赖 `CurrentUserProvider`，其余代码不用动。
+
+### 演示：个人记录隔离
+
+1. 打开 <http://localhost:3000>，上传素材、提交一个任务，等它完成。
+2. 点顶栏「切换用户」→ 页面重载，右上角名字变了，「我的记录」清空。
+3. 再点「切回上一个」→ 记录回来了。
+
+（用普通窗口 + 隐身窗口各算一个用户，效果相同。）
+
+「切换用户 / 切回上一个」只在后端 `dev` profile 下出现；`SPRING_PROFILES_ACTIVE=prod` 时
+按钮消失、对应接口 404。
+
+---
+
 ## 素材
 
 `seed/` 下所有图片都由 `tools/gen_seed_assets.py` 程序化生成，**不使用任何第三方素材**，
@@ -216,13 +251,13 @@ Get-NetTCPConnection -LocalPort 8090 -State Listen | ForEach-Object { Stop-Proce
 
 ---
 
-## 已知限制（P5 时点）
+## 已知限制（P6 时点）
 
 - `docker compose up --build` 尚未拉起前后端（P7 完成），当前只有 MySQL 可用。
-- 身份仍是固定的种子演示用户（`app.demo-user-id`）；P6 换成 Cookie 解析后才有真正的个人隔离。
+- 身份不是认证：Cookie 值可被冒用（见上一节「边界」）。
 - 模拟配置存在内存里，重启即失效（这是开发工具，不是业务状态）。
 - 上传位移除只清本地预览，不调用服务端 `DELETE`：已提交的素材不能删，未提交的会留成孤儿文件。
-- 未做浏览器 E2E：链路用 API 层 curl + 46 例后端单测 + 30 例前端单测覆盖，UI 交互为人工验证。
+- 未做浏览器 E2E：链路用 API 层 curl + 53 例后端单测 + 30 例前端单测覆盖，UI 交互为人工验证。
 - 服务重启后不恢复执行（进程内线程池），见「范围外」。
 - AI 工作流说明、部署与回滚步骤将在 P7 补入。
 

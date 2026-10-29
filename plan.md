@@ -308,14 +308,33 @@ PENDING ──> PROCESSING(ASSET_CHECK) ──> PROCESSING(GENERATE) ──> PRO
 2. **`applyTo` 默认 `NEXT`**（不是 ALL）：默认一次性可以避免"设了一次失败之后全失败"这种难排查的演示事故。
 3. **配置只存在内存**，进程重启即失效——它是开发工具不是业务状态，已在文档说明。
 
-### P6 · 身份与个人记录（约 0.5 天）
+### P6 · 身份与个人记录（约 0.5 天）✅ 已完成 2026-10-29
 
-- [ ] 极简方案：首次访问后端下发 `uid` HttpOnly cookie（UUID）+ `app_user` 建行；`HandlerInterceptor` 解析成 `CurrentUser`
-- [ ] 所有查询/提交按 `userId` 过滤；`assetIds` 归属校验（防越权）
-- [ ] 演示手段：`/api/dev/switch-user` 或清 cookie；README 写清"换浏览器 = 换用户"
-- [ ] 顶部显示当前用户 + "切换用户"入口（对齐 UI-04 账号入口的位置感，但不做设置页）
+- [x] `tujang_uid` Cookie（HttpOnly / SameSite=Lax / 30 天）+ `UserService` 三条解析规则
+- [x] `CookieCurrentUserProvider` 替换 P2 的演示实现，业务代码零改动
+- [x] `CurrentUserInterceptor` + `CurrentUserHolder`（ThreadLocal，请求结束必清）
+- [x] `GET /api/me`（含 `devTools`）、`POST /api/dev/users/switch`（仅 dev，支持切回）
+- [x] 顶栏显示当前用户；「切换用户 / 切回上一个」仅 dev 可见；切换后整页跳转
+- [x] 单测 `UserServiceTest` 7 例（认领已有 / 采用预置 id / 无 Cookie / 非法 Cookie / 显示名 / last_seen / 换新）
+- [x] 文档：`docs/api.md §5`、README「身份与个人记录」
 
-**完成判据**：A 用户建 2 个任务，切到 B 用户历史为空；回到 A 仍在。
+**完成判据**：实测 A 建 1 个任务 → 切到 B 看到 0 条 → 切回 A 又看到 1 条；
+B 的 Cookie 访问 A 的任务 → 403 `TASK_FORBIDDEN`；连续 5 次"全新用户首次打开历史页"均 200 且带头像；
+`SPRING_PROFILES_ACTIVE=prod` → 切换接口与模拟接口都 404，`/api/me` 的 `devTools=false`。
+
+**实际与计划的偏差（两个并发 bug，都是实测才暴露的）**：
+
+1. **首屏并发建用户撞主键**：layout 取 `/api/me` 与页面取 `/api/tasks` 同时发现"新 Cookie 的用户不存在"，
+   两边都 INSERT，其中一个 `Duplicate entry` → 500。修复：`INSERT ... ON DUPLICATE KEY UPDATE id = id` 幂等化。
+2. **REPEATABLE READ 快照导致"写入后读不到"**：即使插入幂等，`@Transactional` 里"插入后再查"
+   读到的仍是事务开始时的快照，看不到并发事务刚提交的行。修复：`resolveOrCreate` **不加事务**，
+   每条语句各自提交。这两个 bug 单测都测不出来，只有真实并发首屏才会复现。
+3. **中间件先发 Cookie**：服务端组件不能设 Cookie，所以由 `middleware.ts` 生成并同时写进请求与响应；
+   后端采用前端预生成的 id，避免每次 SSR 多建一个空用户。
+4. **服务端取数要转发 Cookie**：抽了 `lib/server-api.ts`（`cookies()` → `Cookie` 头），
+   否则 SSR 请求在 Java 看来都是新访客，历史页永远是空的。
+5. **可切回上一个**：切换后原身份不可达会让"隔离演示"很难讲，于是给 `switch` 加了可选 `userId`，
+   前端记住上一个用户并提供「切回上一个」。生产环境这个入口整体不存在。
 
 ### P7 · 工程交付（约 1.0 天）
 

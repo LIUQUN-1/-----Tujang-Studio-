@@ -41,9 +41,6 @@ mybatis:
   type-aliases-package: com.tujang.studio.domain
 
 app:
-  # P2/P3 期间所有请求都算作这个种子用户；P6 换成 Cookie 解析
-  demo-user-id: ${APP_DEMO_USER_ID:0f0c1b3e-0000-4000-8000-000000000001}
-
   storage:
     # 运行时产物（用户上传、制作结果），随容器 volume 持久化
     data-dir: ${APP_STORAGE_DATA_DIR:./data}

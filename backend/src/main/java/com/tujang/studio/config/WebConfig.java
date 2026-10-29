@@ -7,8 +7,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+
+import com.tujang.studio.web.CurrentUserInterceptor;
 
 /**
  * 静态资源映射。
@@ -27,13 +30,25 @@ public class WebConfig implements WebMvcConfigurer {
 
     private final String dataDir;
     private final String seedDir;
+    private final CurrentUserInterceptor currentUserInterceptor;
 
     public WebConfig(
             @Value("${app.storage.data-dir}") String dataDir,
-            @Value("${app.storage.seed-dir}") String seedDir) {
+            @Value("${app.storage.seed-dir}") String seedDir,
+            CurrentUserInterceptor currentUserInterceptor) {
         this.dataDir = dataDir;
         this.seedDir = seedDir;
+        this.currentUserInterceptor = currentUserInterceptor;
         log.info("storage: data-dir={} seed-dir={}", toUri(dataDir), toUri(seedDir));
+    }
+
+    @Override
+    public void addInterceptors(InterceptorRegistry registry) {
+        // /api/health 不建用户（健康检查会被反复调用，不该污染用户表）；
+        // /api/dev/** 是开发工具，也不需要身份（切换用户接口自己建人）。
+        registry.addInterceptor(currentUserInterceptor)
+                .addPathPatterns("/api/**")
+                .excludePathPatterns("/api/health", "/api/dev/**");
     }
 
     @Override
