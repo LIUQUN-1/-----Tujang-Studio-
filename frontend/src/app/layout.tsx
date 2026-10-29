@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 
 import { SiteHeader } from "@/components/site-header";
+import { TaskWatcher } from "@/components/task-watcher";
 
 import "./globals.css";
 
@@ -22,6 +23,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="zh-CN">
       <body className="min-h-screen">
+        {/* 全局任务观察者：刷新恢复 + 持续跟踪未完成任务，不渲染任何内容 */}
+        <TaskWatcher />
         <SiteHeader />
         <main className="mx-auto w-full max-w-[1400px] px-5 py-8 sm:px-8 sm:py-10">{children}</main>
       </body>

@@ -19,6 +19,8 @@ type TaskStore = {
   order: string[];
   /** 批量写入（首屏历史、刷新恢复）：视为查询成功 */
   upsertMany: (tasks: TaskDto[]) => void;
+  /** 只写入 store 里还没有的 id：用于首屏兜底，不覆盖已从网络拿到的新数据 */
+  hydrateMissing: (tasks: TaskDto[]) => void;
   /** 单条更新（轮询回来）：只覆盖 task，不动其他任务 */
   applyTask: (task: TaskDto) => void;
   /** 查询失败：**只**标记查询通道，绝不改写 task.status */
@@ -53,6 +55,24 @@ export const useTaskStore = create<TaskStore>((set) => ({
       entries: { ...state.entries, [task.id]: { task, queryState: "ok", queryError: undefined } },
       order: state.order.includes(task.id) ? state.order : [task.id, ...state.order],
     })),
+
+  hydrateMissing: (tasks) =>
+    set((state) => {
+      const missing = tasks.filter((task) => !state.entries[task.id]);
+      if (missing.length === 0) {
+        return state;
+      }
+      const entries = { ...state.entries };
+      const order = [...state.order];
+      for (const task of missing) {
+        entries[task.id] = { task, queryState: "ok" };
+        if (!order.includes(task.id)) {
+          order.push(task.id);
+        }
+      }
+      order.sort((a, b) => (entries[b]?.task.createdAt ?? "").localeCompare(entries[a]?.task.createdAt ?? ""));
+      return { entries, order };
+    }),
 
   markQueryError: (id, message) =>
     set((state) => {

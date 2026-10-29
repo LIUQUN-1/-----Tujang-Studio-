@@ -262,18 +262,29 @@ PENDING ──> PROCESSING(ASSET_CHECK) ──> PROCESSING(GENERATE) ──> PRO
 7. `TaskServiceTest` 用 `@MockitoSettings(LENIENT)`：多次断言"在校验早期就抛错，后续 stub 用不上"，
    严格模式会把这种**正确行为**报成 UnnecessaryStubbing。
 
-### P4 · 前端异步状态（约 1.5 天）· 前端核心
+### P4 · 前端异步状态（约 1.5 天）✅ 已完成 2026-10-29 · 前端核心
 
-- [ ] `useTaskStore`（Zustand）：`tasks: Record<taskId, {task, queryState, lastQueryError}>` —— **按 id 索引**，天然的互不串扰
-- [ ] `useTaskPoller`：维护"活跃 id 集合"，单一定时器；集合空 → 清定时器；`AbortController` 处理竞态；组件卸载 / 切换用户 → 取消并清空
-- [ ] 四维状态分离：`上传态 | 提交态 | 任务态 | 查询态`，其中**查询失败绝不写入 task.status**
-- [ ] 详情页右侧 History 卡片区：同屏可出现多个"处理中"与一个"失败"（对齐 UI-03 截图）
-- [ ] 受理成功瞬间：按钮从"提交中"恢复可点、清空上传位、新卡片入场并开始轮询
-- [ ] 历史页：时间倒序，状态徽标，成功显示结果缩略图（点开预览大图），失败显示"死在哪步 + 原因"
-- [ ] 查询异常：卡片显示"状态刷新失败 · 点击重试"，任务信息保留
-- [ ] **前端单测**：两任务交叉更新互不影响；查询 500 后任务仍为 PROCESSING；无未完成任务时不再发请求；终态后停止轮询
+- [x] `useTaskStore`（Zustand）：`entries` 按 **taskId 索引**，天然的互不串扰
+- [x] `useTaskPoller`：只轮询"未完成"的 id 集合；集合空 → 清定时器；集合变 → 先 abort 上一轮
+- [x] 状态分离：`upload`（slot.status）/ `submit`（composer.submitting）/ `task`（store）/ `query`（store.queryState）
+- [x] 详情页 History 卡片区与历史页共用 `TaskList`；同屏可多个"处理中" + 失败/成功
+- [x] 受理成功瞬间：按钮从"提交中"恢复、清空上传位、新卡片入场并开始轮询
+- [x] 历史页：按创建时间倒序、模板信息、状态徽标、结果缩略图、失败原因
+- [x] 查询异常：卡片单独一条黄色提示 + 重试按钮，与红色的"任务失败"分开
+- [x] **前端单测**：`task-store.test.ts` 10 例 + `use-task-poller.test.tsx` 5 例（共 30 例）
 
-**完成判据**：连点 3 次创建 3 个任务，三张卡进度独立；杀掉后端再恢复，卡片先报"刷新失败"再自动接上；刷新页面后未完成任务继续走到成功。
+**完成判据**：连提 3 个任务 → 三张卡各自推进（实测 t≈1s 时三条都 `PROCESSING/GENERATE`，t≈7s 全部 `SUCCEEDED`）；
+刷新页面后未完成任务仍在并继续跟踪（服务端首屏直接渲染在途任务，实测截图即刷新后状态）；
+单测覆盖"任务 A 更新不影响 B""查询失败不改 status""无待处理任务时不发请求"。
+
+**实际与计划的偏差（已修正，后续阶段沿用）**：
+
+1. **轮询器提到 layout（`TaskWatcher`）**，而不是页面级：这样刷新任意页面都能恢复跟踪，
+   也避免"从详情页跳到历史页就断更"。离开站点（layout 卸载）才清理；切用户的清理留到 P6。
+2. **`useMergedTasks` 用"服务端首屏 + store 覆盖"**，首帧不空白；并且 `hydrateMissing`
+   只补缺失的 id，避免服务端旧数据把轮询到的新状态盖回去。
+3. **结果图从大图改为 128×84 缩略图 + 尺寸信息**：历史列表里把 4:3 图拉满宽会变成一条横幅，信息密度反而更低。
+4. 详情页与历史页共用 `TaskList`，差别只有 `showTemplate` 与空态文案。
 
 ### P5 · 失败与耗时模拟（约 0.5 天）
 

@@ -11,6 +11,11 @@ export function fetchTask(id: string, signal?: AbortSignal): Promise<TaskDto> {
   return apiGet<TaskDto>(`/api/tasks/${encodeURIComponent(id)}`, { signal });
 }
 
+/** 浏览器侧任务列表（刷新恢复用）。 */
+export function listTasks(limit = 50): Promise<TaskDto[]> {
+  return apiGet<TaskDto[]>(`/api/tasks?limit=${limit}`);
+}
+
 /** 服务端组件用：首屏渲染历史/初始列表。 */
 export function listTasksServer(limit = 50): Promise<TaskDto[]> {
   return serverGet<TaskDto[]>(`/api/tasks?limit=${limit}`);

@@ -34,7 +34,7 @@ function stepStateOf(task: TaskDto, step: TaskStepCode): StepState {
   return "pending";
 }
 
-export function TaskCard({ entry }: { entry: TaskEntry }) {
+export function TaskCard({ entry, showTemplate }: { entry: TaskEntry; showTemplate?: boolean }) {
   const { task, queryState, queryError } = entry;
   const meta = STATUS_META[task.status];
   const [retrying, setRetrying] = useState(false);
@@ -55,13 +55,23 @@ export function TaskCard({ entry }: { entry: TaskEntry }) {
 
   return (
     <article className="rounded-xl border border-white/[0.07] bg-ink-850/60 p-3">
+      {showTemplate && (
+        <div className="mb-2.5 flex items-center gap-2">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={task.templateCoverUrl}
+            alt=""
+            width={28}
+            height={35}
+            className="h-9 w-7 rounded-md object-cover"
+          />
+          <span className="truncate text-[13px] text-zinc-300">{task.templateTitle}</span>
+        </div>
+      )}
+
       <header className="flex items-center justify-between gap-2">
         <span className={`rounded-full border px-2 py-0.5 text-[11px] ${meta.badge}`}>{meta.label}</span>
-        <time
-          className="text-[11px] text-zinc-500"
-          dateTime={task.createdAt}
-          suppressHydrationWarning
-        >
+        <time className="text-[11px] text-zinc-500" dateTime={task.createdAt} suppressHydrationWarning>
           {formatTime(task.createdAt)}
         </time>
       </header>
@@ -85,29 +95,44 @@ export function TaskCard({ entry }: { entry: TaskEntry }) {
               >
                 {STEP_LABEL[step]}
               </span>
-              {step !== "FINALIZE" && <span aria-hidden className="text-[10px] text-zinc-700">→</span>}
+              {step !== "FINALIZE" && (
+                <span aria-hidden className="text-[10px] text-zinc-700">
+                  →
+                </span>
+              )}
             </li>
           );
         })}
       </ol>
 
       {task.result && (
-        <a
-          href={task.result.url}
-          target="_blank"
-          rel="noreferrer"
-          className="mt-3 block overflow-hidden rounded-lg border border-white/10"
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={task.result.url}
-            alt={`${task.templateTitle}制作结果`}
-            width={task.result.width ?? 1200}
-            height={task.result.height ?? 900}
-            className="max-h-56 w-full object-cover"
-          />
-          <span className="sr-only">点击查看大图</span>
-        </a>
+        <div className="mt-3 flex items-start gap-3">
+          <a
+            href={task.result.url}
+            target="_blank"
+            rel="noreferrer"
+            className="shrink-0 overflow-hidden rounded-lg border border-white/10"
+            aria-label={`查看${task.templateTitle}的结果大图`}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={task.result.url}
+              alt={`${task.templateTitle}制作结果`}
+              width={112}
+              height={84}
+              className="h-[84px] w-28 object-cover"
+            />
+          </a>
+          <div className="min-w-0 flex-1 text-[11px] leading-relaxed text-zinc-500">
+            <p>
+              结果图
+              {task.result.width && task.result.height
+                ? ` · ${task.result.width}×${task.result.height}`
+                : ""}
+            </p>
+            <p className="mt-0.5 text-zinc-600">点击缩略图查看原图</p>
+          </div>
+        </div>
       )}
 
       {task.status === "FAILED" && (

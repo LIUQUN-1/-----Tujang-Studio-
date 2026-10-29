@@ -7,7 +7,7 @@ import { ApiError } from "@/lib/api";
 import { formatBytes, formatMimeTypes } from "@/lib/format";
 import { listTasksServer } from "@/lib/tasks";
 import { TemplateComposer } from "@/components/template-composer";
-import { TemplateTasks } from "@/components/template-tasks";
+import { TaskList } from "@/components/task-list";
 
 export const dynamic = "force-dynamic";
 
@@ -103,7 +103,18 @@ export default async function TemplateDetailPage({ params }: { params: Params })
             <span className="text-[11px] text-zinc-600">按创建时间倒序</span>
           </div>
 
-          <TemplateTasks templateId={template.id} initialTasks={initialTasks} />
+          <TaskList
+            initialTasks={initialTasks}
+            templateId={template.id}
+            empty={
+              <div className="mt-4 rounded-xl border border-dashed border-white/10 px-4 py-14 text-center">
+                <p className="text-sm text-zinc-400">还没有制作记录</p>
+                <p className="mx-auto mt-1 max-w-xs text-xs leading-relaxed text-zinc-600">
+                  提交任务后，处理进度和结果会出现在这里；离开页面或刷新都不会中断后台处理。
+                </p>
+              </div>
+            }
+          />
         </section>
       </div>
     </div>
