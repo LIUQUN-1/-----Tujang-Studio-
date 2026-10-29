@@ -2,9 +2,14 @@
 -- 图匠工坊 Tujang Studio · 数据库结构
 -- MySQL 8.0 / utf8mb4
 -- 说明：本文件由 docker-entrypoint-initdb.d 在**数据卷为空时**自动执行。
---       手动初始化：mysql -u root -p < db/01-schema.sql
+--       手动初始化：mysql --default-character-set=utf8mb4 -u root -p < db/01-schema.sql
 -- 时间约定：所有 DATETIME(3) 一律存 UTC，由应用层写入。
 -- ---------------------------------------------------------------------------
+
+-- 必须显式声明连接字符集：MySQL 官方镜像的容器里 LANG 为空，
+-- mysql 客户端会退化成 latin1，导致脚本里的中文字节被当成 latin1 再转成 utf8mb4，
+-- 最终变成"双重编码"的乱码。必须放在任何语句之前。
+SET NAMES utf8mb4;
 
 CREATE DATABASE IF NOT EXISTS `tujang`
   DEFAULT CHARACTER SET utf8mb4

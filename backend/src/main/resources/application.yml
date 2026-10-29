@@ -31,6 +31,8 @@ spring:
 mybatis:
   configuration:
     map-underscore-to-camel-case: true
+    # 允许 record 作为查询结果类型（按构造参数名匹配列）
+    arg-name-based-constructor-auto-mapping: true
   type-aliases-package: com.tujang.studio.domain
 
 app:

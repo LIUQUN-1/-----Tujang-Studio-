@@ -279,15 +279,18 @@ def draw_label(img: Image.Image, title: str, subtitle: str, accent, scale: float
     return img
 
 
-def build(width: int, height: int, title, subtitle, c1, c2, accent, motif: str, seed_value: int) -> Image.Image:
+def build(width: int, height: int, title, subtitle, c1, c2, accent, motif: str, seed_value: int,
+          with_label: bool = True) -> Image.Image:
     rng = random.Random(seed_value)
     img = diagonal_gradient(width, height, c1, c2, accent)
     over = MOTIFS[motif](width, height, accent, rng)
     img = Image.alpha_composite(img.convert("RGBA"), over).convert("RGB")
     img = add_vignette(img)
-    img = add_scrim(img)
-    scale = min(width, height) / 1000.0
-    img = draw_label(img, title, subtitle, accent, scale=scale)
+    if with_label:
+        # 只有"示例照片"带文字；模板封面与结果图不带，
+        # 否则界面上会出现图里的标题 + 叠加的标题两份，重复且廉价。
+        img = add_scrim(img)
+        img = draw_label(img, title, subtitle, accent, scale=min(width, height) / 1000.0)
     img = add_grain(img)
     # 轻微提饱和与对比，抵消雾化和暗角带来的灰
     img = ImageEnhance.Color(img).enhance(1.22)
@@ -303,14 +306,17 @@ def main() -> None:
     random.seed(20261028)
 
     for i, (tid, title, subtitle, c1, c2, accent, motif) in enumerate(TEMPLATES):
-        cover = build(800, 1000, title, subtitle, c1, c2, accent, motif, seed_value=1000 + i)
+        cover = build(800, 1000, title, subtitle, c1, c2, accent, motif,
+                      seed_value=1000 + i, with_label=False)
         cover.save(os.path.join(SEED, "covers", f"{tid}.jpg"), quality=88, optimize=True)
 
-        result = build(1200, 900, title, f"{subtitle} · RESULT", c1, c2, accent, motif, seed_value=2000 + i)
+        result = build(1200, 900, title, f"{subtitle} · RESULT", c1, c2, accent, motif,
+                       seed_value=2000 + i, with_label=False)
         result.save(os.path.join(SEED, "results", f"{tid}.jpg"), quality=88, optimize=True)
 
     for j, (name, c1, c2, accent, motif) in enumerate(SAMPLES):
-        sample = build(1000, 750, f"示例照片 {j + 1}", "SAMPLE PHOTO", c1, c2, accent, motif, seed_value=3000 + j)
+        sample = build(1000, 750, f"示例照片 {j + 1}", "SAMPLE PHOTO", c1, c2, accent, motif,
+                       seed_value=3000 + j, with_label=True)
         sample.save(os.path.join(SEED, "samples", f"{name}.jpg"), quality=86, optimize=True)
 
     total = 0

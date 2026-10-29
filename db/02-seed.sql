@@ -7,6 +7,9 @@
 -- 封面图位于 seed/covers/，由 Java 以 /files/seed/** 暴露。
 -- ---------------------------------------------------------------------------
 
+-- 同 01-schema.sql：容器内客户端默认 latin1，不显式声明会把中文写坏
+SET NAMES utf8mb4;
+
 USE `tujang`;
 
 INSERT INTO `category` (`code`, `name`, `sort_order`) VALUES

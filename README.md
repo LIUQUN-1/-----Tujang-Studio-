@@ -28,7 +28,7 @@ POST /api/tasks ──> 202 + taskId（不等制作完成）
 | 阶段 | 内容 | 状态 |
 |---|---|---|
 | P0 | 仓库骨架、接口契约、数据库与种子数据、Compose、前后端空工程（链路打通） | ✅ 完成 |
-| P1 | 模板列表 / 分类筛选 / 详情页 | ⬜ 待开始 |
+| P1 | 模板列表 / 分类筛选 / 详情页 | ✅ 完成 |
 | P2 | 素材上传（预览、替换、移除、校验） | ⬜ 待开始 |
 | P3 | 提交受理 + 三步异步执行 + 状态查询 | ⬜ 待开始 |
 | P4 | 前端任务状态机、轮询生命周期、历史与刷新恢复 | ⬜ 待开始 |
@@ -37,10 +37,10 @@ POST /api/tasks ──> 202 + taskId（不等制作完成）
 | P7 | 测试、CI、容器交付、README 定稿 | ⬜ 待开始 |
 | P8 | 冷启动验收与收尾 | ⬜ 待开始 |
 
-> P0 已验证：`/api/health` 与 `/files/seed/**` 经 Next 代理可达；页面服务端直连 Java 显示"已连通"；
-> MySQL 初始化出 9 个模板 / 4 个分类。
+> P1 已验证：`GET /api/categories`、`/api/templates?category=`、`/api/templates/{id}` 均返回契约字段；
+> 分类筛选生效；不存在的模板返回 404 + 统一错误体 `{"code":"TEMPLATE_NOT_FOUND",...}`。
 
-![P0 骨架页面](docs/p0-screenshot.png)
+![模板列表（P1）](docs/p1-list.png)
 
 ---
 
@@ -156,11 +156,11 @@ BACKEND_URL=http://localhost:8090
 docker compose down -v && docker compose up -d mysql
 ```
 
-手动初始化：
+手动初始化（**必须带 `--default-character-set=utf8mb4`**，原因见「常见问题」）：
 
 ```bash
-mysql -u root -p < db/01-schema.sql
-mysql -u root -p < db/02-seed.sql
+mysql --default-character-set=utf8mb4 -u root -p < db/01-schema.sql
+mysql --default-character-set=utf8mb4 -u root -p < db/02-seed.sql
 ```
 
 9 个模板刻意覆盖三类演示差异：1/2/3 张素材要求、仅接受 JPG 的模板、限 1MB 的模板。
@@ -186,11 +186,42 @@ python tools/gen_seed_assets.py     # 需要 Pillow
 
 ---
 
-## 已知限制（P0 时点）
+## 常见问题
+
+**数据库里中文变成乱码（形如 `æ—…è¡Œ…`）**
+MySQL 官方镜像的容器里 `LANG` 为空，`mysql` 客户端会退化成 `latin1`，
+把 UTF-8 脚本里的中文按 latin1 解释再转存成 utf8mb4，于是双重编码。
+两个 SQL 文件开头都写了 `SET NAMES utf8mb4;`，重新初始化即可修复：
+
+```bash
+docker compose down -v && docker compose up -d mysql
+```
+
+校验：`SELECT HEX(LEFT(title,2)) FROM template;` 应为 `E69785`（旅），不是 `C3A6E28094`。
+
+**`pnpm build` 之后 `pnpm dev` 报 `Cannot find module './vendor-chunks/...'`**
+两者共用 `.next` 会互相覆盖。本项目已把开发产物放到 `.next-dev`（见 `next.config.ts` 的 `distDir`），
+正常情况不会遇到；若从旧版本升级而来，删掉 `.next` 与 `.next-dev` 重来一次即可。
+
+**后端启动报 `Port 8090 was already in use`**
+多半是上一次的调试进程还活着（VS Code 的调试会话停止后子进程偶尔残留）：
+
+```powershell
+Get-NetTCPConnection -LocalPort 8090 -State Listen | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
+```
+
+**`mvn spring-boot:run` 报找不到主类**
+见「快速开始」里的说明：Windows + 中文/括号路径下 Spring Boot 插件的 fork 无法正确处理 classpath，
+改用 `java -jar` 或在纯 ASCII 路径下开发。
+
+---
+
+## 已知限制（P1 时点）
 
 - `docker compose up --build` 尚未拉起前后端（P7 完成），当前只有 MySQL 可用。
-- 除 `/api/health` 外的接口尚未实现。
-- `frontend/pnpm test` 目前没有测试文件，脚本带 `--passWithNoTests`；P4 起会补真实用例。
+- 模板域只读；素材上传（P2）、任务提交与执行（P3）、历史与轮询（P4）、身份（P6）尚未实现，
+  详情页与「我的记录」目前是空态。
+- 前端单测只有 `format.test.ts`；任务状态相关的用例会在 P4 随实现一起补齐。
 - AI 工作流说明、部署与回滚步骤将在 P7 补入。
 
 ---

@@ -18,6 +18,11 @@ const nextConfig: NextConfig = {
   // 且会让本地构建与 Docker 构建走两条不同的产物路径。Docker 侧用常规多阶段构建。
   reactStrictMode: true,
   poweredByHeader: false,
+
+  // 开发与生产产物分目录存放。
+  // 默认两者都用 .next，`pnpm build` 之后再 `pnpm dev` 会读到生产的 vendor-chunks，
+  // 报 "Cannot find module './vendor-chunks/...'"，且必须手动删 .next 才能恢复。
+  distDir: process.env.NODE_ENV === "development" ? ".next-dev" : ".next",
   async rewrites() {
     return [
       { source: "/api/:path*", destination: `${backendUrl}/api/:path*` },

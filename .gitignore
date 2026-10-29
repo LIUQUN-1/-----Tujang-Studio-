@@ -2,6 +2,7 @@
 node_modules/
 .pnpm-store/
 frontend/.next/
+frontend/.next-dev/
 frontend/out/
 *.tsbuildinfo
 .eslintcache

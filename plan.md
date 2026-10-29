@@ -181,14 +181,29 @@ PENDING ──> PROCESSING(ASSET_CHECK) ──> PROCESSING(GENERATE) ──> PRO
 4. **pnpm 12 的构建脚本拦截**：需 `frontend/pnpm-workspace.yaml` 的 `allowBuilds`（由 `pnpm approve-builds --all` 生成），否则 `esbuild`/`sharp`/`unrs-resolver` 装不出二进制。
 5. **不开 `output: "standalone"`**：它要求 Windows 符号链接权限，且会让本地与 Docker 产物走两条路径。Docker 侧改用常规多阶段构建。
 
-### P1 · 模板域（约 0.75 天）
+### P1 · 模板域（约 0.75 天）✅ 已完成 2026-10-29
 
-- [ ] 后端：`TemplateMapper` + 列表/分类/详情三个接口 + 统一响应体与错误码
-- [ ] 前端：模板列表页（分类 Tab + 卡片网格 + 封面懒加载）、详情页骨架
-- [ ] 三态 UI：加载骨架 / 空数据 / 请求失败可重试；模板不存在 → 404 页
-- [ ] 小屏（≤640px）可操作：Tab 横向滚动、卡片单列
+- [x] 后端：`TemplateMapper` + 列表/分类/详情三个接口 + 统一响应体与错误码
+- [x] 前端：模板列表页（分类 Tab + 卡片网格 + 封面懒加载）、详情页骨架
+- [x] 三态 UI：加载骨架 / 空数据 / 请求失败可重试；模板不存在 → 404 页
+- [x] 小屏（≤640px）可操作：Tab 横向滚动、卡片两列
+- [x] 测试：后端 `TemplateServiceTest`（5 例：分类切换/空分类/映射/404/计数）、前端 `format.test.ts`（7 例）
 
-**完成判据**：切分类结果变化；点卡片进详情；断网/关后端后页面给出可读错误而非白屏。
+**完成判据**：切分类结果变化（✅ `?category=pet` 只出 2 个宠物模板）；点卡片进详情（✅ 要求/格式/上限正确渲染）；
+后端不可用时报可读错误而非白屏（✅ `error.tsx` + `ApiError` 携带原因）；不存在的模板返回**真 404**
+（✅ 生产模式实测 `/templates/nope` → 404，未知路径 → 404）。
+
+**实际与计划的偏差（已修正，后续阶段沿用）**：
+
+1. **种子数据中文乱码**：MySQL 容器内 `LANG` 为空，`mysql` 客户端退化成 `latin1`，
+   UTF-8 字节被当 latin1 再转 utf8mb4，入库即双重编码。修复：两个 SQL 文件开头 `SET NAMES utf8mb4`，
+   并重建数据卷。校验方式：`HEX(LEFT(title,2))` 应为 `E69785`（旅）而非 `C3A6E28094`。
+2. **`pnpm build` 后 `pnpm dev` 崩溃**（`Cannot find module './vendor-chunks/...'`）：两者共用 `.next`。
+   修复：`distDir` 按 `NODE_ENV` 分目录，dev 用 `.next-dev`。
+3. **`app/loading.tsx` 会吞掉 404 状态码**：它的 Suspense 边界让页面在数据到达前就 flush 出 200，
+   `notFound()` 无法回写状态。修复：骨架屏下沉到列表页内部（只包网格），详情页不设边界。
+4. **封面图烘焙了标题文字**：与卡片叠加标题重复。修复：`gen_seed_assets.py` 中封面/结果图不再绘制文字，
+   仅示例照片保留。
 
 ### P2 · 上传域（约 0.75 天）
 
