@@ -63,9 +63,17 @@ public class StorageService {
         }
     }
 
-    /** 删除素材文件；文件不存在视为成功（幂等）。 */
-    public void deleteAsset(String relativePath) {
+    /** data 目录下该相对路径是否存在且是文件（越界路径一律视为不存在）。 */
+    public boolean exists(String relativePath) {
+        if (relativePath == null || relativePath.isBlank()) {
+            return false;
+        }
         Path target = dataDir.resolve(relativePath).normalize();
+        return target.startsWith(dataDir) && Files.isRegularFile(target);
+    }
+
+    /** 删除素材文件；文件不存在视为成功（幂等）。 */
+    public void deleteAsset(String relativePath) {        Path target = dataDir.resolve(relativePath).normalize();
         // 只允许删除 data 目录下的文件
         if (!target.startsWith(dataDir)) {
             log.warn("refuse to delete outside data dir: {}", relativePath);

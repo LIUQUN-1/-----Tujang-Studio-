@@ -233,17 +233,34 @@ PENDING ──> PROCESSING(ASSET_CHECK) ──> PROCESSING(GENERATE) ──> PRO
 5. **不做浏览器 E2E**（题面也不要求）：上传链路用 curl 走完整代理路径验证 + 单测覆盖校验分支，UI 交互人工确认。
    截图见 `docs/p2-detail.png`、`docs/p2-detail-mobile.png`（后者为真 390 CSS 视口）。
 
-### P3 · 提交与异步执行（约 1.5 天）· 后端核心
+### P3 · 提交与异步执行（约 1.5 天）✅ 已完成 2026-10-29 · 后端核心
 
-- [ ] `POST /api/tasks`：复校 `assetIds`（数量=模板要求、归属当前用户、文件在盘上、类型大小合规）→ 建 task + task_asset → **202 立即返回**
-- [ ] `TaskPipeline`：`@Async` 线程池（core 4 / queue 50）跑 `ASSET_CHECK → GENERATE → FINALIZE`
-- [ ] 每步开始/结束都写库（`current_step`、`started_at`、`finished_at`）；步间 `sleep(可配)`
-- [ ] 失败即中断：写 `FAILED` + `failed_step` + `error_code` + 人话 `error_message`，后续步骤不执行
-- [ ] `GET /api/tasks/{id}` 与历史接口**只读**；终态用条件 UPDATE 保护
-- [ ] 进程内"已完成任务"短路：重复执行直接返回，不重复跑
-- [ ] **单测**：三步顺序、三个位置各自失败都中断、终态不可回退、查询不推进任务、提交校验用例
+- [x] `POST /api/tasks`：复校（数量/重复/归属/类型/大小/文件在盘）→ 建 task + task_asset → **202 立即返回**
+- [x] `TaskPipeline`：`taskExecutor` 线程池跑 `ASSET_CHECK → GENERATE → FINALIZE`
+- [x] 每步写库（`current_step`），失败即中断并落 `failed_step` + `error_code` + 可读文案
+- [x] `GET /api/tasks/{id}` 与历史接口**只读**；终态靠条件 UPDATE 守住
+- [x] 幂等：已终态直接跳过；抢不到 `PENDING→PROCESSING` 就安静退出
+- [x] **单测**：`TaskPipelineTest` 8 例（顺序/三处中断/终态跳过/抢不到/队列满）、`TaskServiceTest` 8 例、`SeedResultProducerTest` 3 例
 
-**完成判据**：`mvn -B test` 全绿且测试里能断言"GENERATE 失败后 FINALIZE 未被调用"；curl 提交后立刻拿到 taskId，`sleep` 期间查接口能看到阶段在变。
+**完成判据**：实测 `POST` 返回 202 + PENDING；轮询看到
+`PROCESSING/ASSET_CHECK`(0–0.8s) → `GENERATE`(0.8–3.2s) → `FINALIZE`(3.2–4.0s) → `SUCCEEDED`，
+结果图 `HTTP 200 image/jpeg 1200×900`；连续查 10 次，`status` 与 `updated_at` 不变（查询不推进任务）；
+数量不符 → 400 字段级错误；他人素材 → 403。
+
+**实际与计划的偏差（已修正，后续阶段沿用）**：
+
+1. **提交接口返回完整 `TaskDto`**（契约原写只返回 3 个字段）：前端对"刚受理"和"查询到"的任务用同一套渲染，
+   卡片能立刻出现，不必先等一次轮询。已同步更新 `docs/api.md §4.1`。
+2. **派发必须在事务提交之后**：用 `TransactionSynchronization.afterCommit` 投递，
+   否则后台线程可能查不到还没提交的 task 行（典型竞态，同步测试也测不出来）。
+3. **队列满 = 明确失败**：拒绝策略用 `AbortPolicy`，捕获后把任务标成 `FAILED(QUEUE_FULL)`。
+   不用 `CallerRunsPolicy`——那会让提交请求被就地执行拖住，破坏"受理即返回"。
+4. **模拟配置在 P3 就先读了**（`sim_fail_step` / `sim_durations` 快照 → `SimulationProfile`），
+   P5 只需要补一个写这两列的开发接口，执行器不动。
+5. **`FAILED` 允许从 `PENDING` 进入**：队列满时任务还没开始跑，`WHERE status NOT IN ('SUCCEEDED','FAILED')` 覆盖这种情况。
+6. **提交后清空上传位只清本地**，不调服务端 `DELETE`：素材已绑定任务，删掉会让「素材检查」失败。
+7. `TaskServiceTest` 用 `@MockitoSettings(LENIENT)`：多次断言"在校验早期就抛错，后续 stub 用不上"，
+   严格模式会把这种**正确行为**报成 UnnecessaryStubbing。
 
 ### P4 · 前端异步状态（约 1.5 天）· 前端核心
 

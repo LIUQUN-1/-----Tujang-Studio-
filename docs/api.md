@@ -189,18 +189,36 @@
 3. 每个 asset 属于当前用户 → `403 ASSET_FORBIDDEN`
 4. 每个 asset 文件仍在磁盘、mime/大小符合模板 → `400 VALIDATION_FAILED`
 
-成功 `202 Accepted`，**不等待制作完成**：
+成功 `202 Accepted`，**不等待制作完成**。响应体是**完整的 TaskDto**（与 4.2 同形状），
+`status` 恒为 `PENDING`、`currentStep`/`result` 为 `null`：
 
 ```json
 {
   "id": "01JBQ3A2M4T8K1R6V9N5P7D3XY",
   "status": "PENDING",
   "currentStep": null,
-  "createdAt": "2026-10-28T13:30:20.000Z"
+  "failedStep": null,
+  "errorCode": null,
+  "errorMessage": null,
+  "templateId": "demo-postcard",
+  "templateTitle": "旅行明信片",
+  "templateCoverUrl": "/files/seed/covers/demo-postcard.jpg",
+  "result": null,
+  "inputs": [
+    { "assetId": "01JBQ2X9K8R4T7V3M5N1P6D0ZA", "url": "/files/assets/01JBQ2X9K8R4T7V3M5N1P6D0ZA.jpg" }
+  ],
+  "simulation": null,
+  "createdAt": "2026-10-28T13:30:20.000Z",
+  "startedAt": null,
+  "finishedAt": null,
+  "updatedAt": "2026-10-28T13:30:20.000Z"
 }
 ```
 
-> 202 而非 200：语义上"已受理、处理中"。前端拿到 `id` 即把按钮解禁。
+> 为什么不只返回 `{id}`：前端对"刚受理的任务"和"查询到的任务"用同一套渲染逻辑，
+> 卡片可以立刻出现，不用先等一次轮询。
+>
+> 202 而非 200：语义上"已受理、处理中"。
 
 ### 4.2 `GET /api/tasks/{id}` — 查询（**纯只读**）
 
@@ -224,7 +242,7 @@
   "inputs": [
     { "assetId": "01JBQ2X9K8R4T7V3M5N1P6D0ZA", "url": "/files/assets/01JBQ2X9K8R4T7V3M5N1P6D0ZA.jpg" }
   ],
-  "simulation": { "failStep": "GENERATE", "durationMsPerStep": 3000 },
+  "simulation": { "failStep": "GENERATE", "perStepDurations": { "GENERATE": 3000 } },
   "createdAt": "2026-10-28T13:30:20.000Z",
   "startedAt": "2026-10-28T13:30:20.100Z",
   "finishedAt": "2026-10-28T13:30:27.000Z",
@@ -241,7 +259,7 @@
 | `errorMessage` | 面向用户的中文原因 |
 | `result` | 仅 `SUCCEEDED` 有值；`FAILED`/进行中为 `null` |
 | `inputs` | 本次任务用到的素材，回显用 |
-| `simulation` | `dev` profile 下回显当次生效的模拟配置；生产为 `null` |
+| `simulation` | `dev` 下回显当次生效的模拟配置（受理时的快照）；生产为 `null` |
 
 **三种形态的要点**：
 
@@ -285,9 +303,8 @@
 ```json
 {
   "failStep": null,
-  "durationMsPerStep": null,
   "perStepDurations": { "ASSET_CHECK": 600, "GENERATE": 2500, "FINALIZE": 500 },
-  "pendingApplyTo": "ALL"
+  "applyTo": "NEXT"
 }
 ```
 
@@ -296,8 +313,7 @@
 ```json
 {
   "failStep": "GENERATE",
-  "durationMsPerStep": 3000,
-  "perStepDurations": null,
+  "perStepDurations": { "ASSET_CHECK": 600, "GENERATE": 3000, "FINALIZE": 500 },
   "applyTo": "NEXT"
 }
 ```
@@ -305,8 +321,7 @@
 | 字段 | 取值 | 说明 |
 |---|---|---|
 | `failStep` | `ASSET_CHECK` / `GENERATE` / `FINALIZE` / `null` | `null` = 不注入失败 |
-| `durationMsPerStep` | 整数毫秒 / `null` | 每步统一耗时，`null` 用后端默认 |
-| `perStepDurations` | `{"ASSET_CHECK":600,...}` / `null` | 覆盖单步耗时，优先级高于上者 |
+| `perStepDurations` | `{"GENERATE":3000,...}` / `null` | 覆盖单步耗时；缺省走 `application.yml` 的默认值 |
 | `applyTo` | `"NEXT"` / `"ALL"` | 仅影响下一个任务 / 持续生效 |
 
 **关键设计**：受理任务时把当时生效的配置**快照写入 `task` 行**（`sim_fail_step`、`sim_durations`），

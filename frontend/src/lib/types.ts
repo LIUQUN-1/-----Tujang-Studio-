@@ -41,3 +41,44 @@ export type AssetDto = {
   height: number | null;
   createdAt: string;
 };
+
+export type TaskStatus = "PENDING" | "PROCESSING" | "SUCCEEDED" | "FAILED";
+
+export type TaskStepCode = "ASSET_CHECK" | "GENERATE" | "FINALIZE";
+
+export type TaskResult = {
+  url: string;
+  width: number | null;
+  height: number | null;
+  createdAt: string | null;
+};
+
+export type TaskInput = {
+  assetId: string;
+  url: string;
+};
+
+export type SimulationInfo = {
+  failStep: string | null;
+  perStepDurations: Record<string, number> | null;
+};
+
+/** 任务视图（docs/api.md §4.2），提交与查询返回同一形状。 */
+export type TaskDto = {
+  id: string;
+  status: TaskStatus;
+  currentStep: TaskStepCode | null;
+  failedStep: TaskStepCode | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  templateId: string;
+  templateTitle: string;
+  templateCoverUrl: string;
+  result: TaskResult | null;
+  inputs: TaskInput[];
+  simulation: SimulationInfo | null;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  updatedAt: string;
+};

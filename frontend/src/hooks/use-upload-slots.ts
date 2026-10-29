@@ -137,6 +137,23 @@ export function useUploadSlots(template: TemplateDetail) {
     [pick],
   );
 
+  /**
+   * 清空所有上传位（提交成功后用）。
+   *
+   * <p>只清本地状态，**不调用服务端删除**：这些素材已经挂到任务上了，
+   * 删了会让任务在「素材检查」阶段失败。服务端的 DELETE 留给"用户主动移除且未提交"的场景。
+   */
+  const reset = useCallback(() => {
+    controllers.current.forEach((controller) => controller.abort());
+    controllers.current.clear();
+    blobUrls.current.forEach((url) => URL.revokeObjectURL(url));
+    blobUrls.current.clear();
+    pickedFiles.current.clear();
+    setSlots((prev) =>
+      prev.map((slot) => ({ key: slot.key, position: slot.position, status: "empty" as const })),
+    );
+  }, []);
+
   // 卸载时收尾：中断请求 + 释放本地预览
   useEffect(() => {
     const activeControllers = controllers.current;
@@ -160,5 +177,6 @@ export function useUploadSlots(template: TemplateDetail) {
     pick,
     remove,
     retry,
+    reset,
   };
 }

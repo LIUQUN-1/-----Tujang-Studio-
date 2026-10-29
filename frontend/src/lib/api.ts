@@ -47,6 +47,20 @@ async function toApiError(res: Response): Promise<ApiError> {
   return new ApiError(res.status, code, message, fields);
 }
 
+/** 浏览器侧 JSON POST。 */
+export async function apiPost<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
+  const res = await fetch(path, {
+    method: "POST",
+    body: JSON.stringify(body),
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    signal,
+  });
+  if (!res.ok) {
+    throw await toApiError(res);
+  }
+  return (await res.json()) as T;
+}
+
 /** 浏览器侧 multipart 上传。不要手工设置 Content-Type，交给浏览器带 boundary。 */
 export async function apiUpload<T>(path: string, form: FormData, signal?: AbortSignal): Promise<T> {
   const res = await fetch(path, {
@@ -66,7 +80,7 @@ export function serverApiBase(): string {
   return (process.env.BACKEND_URL ?? "http://localhost:8080").replace(/\/+$/, "");
 }
 
-async function serverGet<T>(path: string): Promise<T> {
+export async function serverGet<T>(path: string): Promise<T> {
   const url = `${serverApiBase()}${path}`;
   let res: Response;
   try {
