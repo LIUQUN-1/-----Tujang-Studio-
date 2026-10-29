@@ -21,6 +21,16 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
+/**
+ * 每个页面的首屏都带身份（顶栏、个人记录），没有可以静态化的页面。
+ *
+ * 显式声明成动态渲染，除了表达这一点，还顺手消掉了构建期的一条噪音：
+ * 生成 /_not-found 时根布局会调 `cookies()`，Next 会打一行
+ * "Route /_not-found couldn't be rendered statically because it used `cookies`"。
+ * 构建结果本来就没错（退出码 0），但日志里一条红色错误容易让人误判。
+ */
+export const dynamic = "force-dynamic";
+
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   // 身份由中间件保证存在；后端不可用时降级为"未登录"，不让整页报错
   let me: Me | null = null;

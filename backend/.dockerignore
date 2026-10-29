@@ -1,0 +1,8 @@
+# 构建上下文内不需要的东西
+target/
+data/
+*.log
+.mvn/
+mvnw
+mvnw.cmd
+Dockerfile

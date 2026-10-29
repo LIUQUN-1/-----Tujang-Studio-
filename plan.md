@@ -336,15 +336,38 @@ B 的 Cookie 访问 A 的任务 → 403 `TASK_FORBIDDEN`；连续 5 次"全新�
 5. **可切回上一个**：切换后原身份不可达会让"隔离演示"很难讲，于是给 `switch` 加了可选 `userId`，
    前端记住上一个用户并提供「切回上一个」。生产环境这个入口整体不存在。
 
-### P7 · 工程交付（约 1.0 天）
+### P7 · 工程交付（约 1.0 天）✅ 已完成 2026-10-29
 
-- [ ] 补齐测试：后端覆盖步骤顺序/中断/幂等/校验；前端覆盖隔离/查询异常/停止轮询
-- [ ] `.github/workflows/ci.yml`：`web`（pnpm install --frozen-lockfile → lint → `tsc --noEmit` → build）+ `api`（`mvn -B verify`）
-- [ ] `docker-compose.yml` 完整：mysql（`db/` 自动初始化）+ api（等 mysql healthy）+ web；healthcheck；`docker compose up --build` 冷启动即用
-- [ ] `README.md` 覆盖 R-13 七项（版本/结构/命令、配置与初始化、接口与状态机、演示步骤、身份方案、已完成与限制、部署回滚）+ AI 工作流 + 引用来源
-- [ ] `docs/ai-workflow.md` 用**本次实施过程本身**做例子（含计划、契约、被修正的问题）
+- [x] 补齐测试：后端 53 例（步骤顺序/中断/幂等/校验）；前端 38 例（含新增 `TaskCard` 8 例：四态呈现、查询异常≠任务失败、重试成功/失败）
+- [x] `.github/workflows/ci.yml`：`web`（install --frozen-lockfile → lint → `tsc --noEmit` → test → build）+ `api`（`mvn -B verify`）+ `images`（buildx 构建两个镜像）
+- [x] `backend/Dockerfile`（maven build → JRE 运行，非 root，自带 HEALTHCHECK）、`frontend/Dockerfile`（deps → build → runner）
+- [x] `docker-compose.yml` 完整：mysql（`db/` 自动初始化）+ api（等 mysql healthy）+ web（等 api healthy）；`up --build` 冷启动即用
+- [x] `README.md` 按 R-13 七项重写（版本/结构/命令、配置与初始化、接口与状态机、演示、身份、已完成与限制、部署回滚）+ AI 工作流 + 引用来源
+- [x] `docs/ai-workflow.md` 用本次实施过程本身做例子（含被真实验证抓出来的 5 个问题）
 
-**完成判据**：删掉本地 `node_modules`/`target`/`data` 后 `docker compose up --build` 冷启动一次通过，按 README 走完五步演示。
+**完成判据**：`docker compose down -v` 清空数据卷后 `docker compose up -d --build`，三个服务全部 healthy；
+经 3001（web）走完整链路：模板 9 个、上传 2 张、提交 202、阶段 0.55/1.00/3.64s、4.08s SUCCEEDED、结果图 200 image/jpeg；
+注入 `GENERATE` 失败 → `FAILED/GENERATE_TIMEOUT` 且 `result=null`，`NEXT` 一次性用完自动清空；
+连查 10 次 `status|updatedAt` 只有 1 种取值；`prod` profile 下三个 dev 接口全 404、`devTools=false`、`/api/templates` 仍 200。
+
+**实际与计划的偏差（已修正，后续阶段沿用）**：
+
+1. **中间件不能给 `/api/**` 发 Cookie**。rewrite 的响应来自 Java，Next 不会把中间件设在
+   `NextResponse` 上的 `Set-Cookie` 合并进这个代理响应（实测：页面响应有，`/api/me` 没有）。
+   结果纯 API 客户端（curl、脚本）永远拿不到身份，上传与提交分属两个用户 → `403 ASSET_FORBIDDEN`。
+   修复：中间件 matcher 排除 `api`/`files`，**页面请求由中间件发 id，API 请求由 Java 发**，
+   Java 的 `Set-Cookie` 经代理原样透传（实测有效）。`docs/demo.md` 的 curl 示例随之加上 Cookie jar。
+2. **`/_not-found` 预渲染噪音**：根布局调 `cookies()`，构建时会打一行红色
+   "couldn't be rendered statically because it used `cookies`"（退出码仍是 0）。
+   修复：根布局声明 `export const dynamic = "force-dynamic"`——所有页面本来就带身份、无静态页。
+3. **`web` 的健康检查经 Next 代理打后端 `/api/health`**：一条检查同时覆盖"web 起来了"和
+   "rewrite 指向对了"。指向错时容器直接 unhealthy，而不是等人打开页面才发现 502。
+4. **api 构建上下文改成 `./backend`**：seed 走 volume 只读挂载，镜像里不需要它，上下文更小。
+5. **冷启动用映射端口验证**（3307/8092/3001）：本机 3306/8080/3000 被其他项目占用。
+   端口映射是纯配置，已用同一份 compose 的默认值做静态核对。
+6. **CI 的 Actions 未在 GitHub 上真实跑过**（本仓库没有远端）。CI 三个 job 的命令已在本机
+   逐条等价执行（`lint`/`typecheck`/`test`/`build`/`mvn verify` 全绿），但"工作流文件本身能被
+   GitHub 正确调度"记为**未验证**，已在 README 的 R-12 行如实标注。
 
 ### P8 · 收尾验证（约 0.5 天）
 

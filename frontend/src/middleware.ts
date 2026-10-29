@@ -12,6 +12,9 @@ export const USER_COOKIE = "tujang_uid";
  *
  * <p>后端看到合法 UUID 但库里没有时，会**采用这个 id** 建行（而不是另建一个），
  * 这也是为了不产生"没人用的空用户"。
+ *
+ * <p>注意：中间件只负责**页面**请求。`/api/**` 被排除在 matcher 之外，
+ * 没有 Cookie 的 API 客户端由 Java 自己建用户并发 Cookie——原因见文件末尾。
  */
 export function middleware(request: NextRequest) {
   if (request.cookies.get(USER_COOKIE)?.value) {
@@ -34,6 +37,18 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // 静态资源与图片不参与引导
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpe?g|svg|ico|webp)$).*)"],
+  // 静态资源、图片不参与引导；**/api 与 /files 也排除**，原因见下面这段。
+  //
+  // 为什么把 /api/** 排除在外：rewrite 出去的响应来自 Java，Next 不会把中间件
+  // 在 NextResponse 上设的 Set-Cookie 合并进这个代理响应（实测：页面响应有
+  // set-cookie，/api/me 没有）。于是"中间件发 id + 后端采用它"的组合会让
+  // 纯 API 客户端（curl、脚本）永远拿不到 Cookie，每次请求都被当成新用户。
+  //
+  // 现在的分工更简单：
+  //   页面请求 → 中间件发 id（SSR 需要它在本次请求里）
+  //   API 请求 → 没有 Cookie 就由 Java 自己建用户并 Set-Cookie，
+  //              上游的 Set-Cookie 会原样透传（实测有效）
+  matcher: [
+    "/((?!api|files|_next/static|_next/image|favicon.ico|.*\\.(?:png|jpe?g|svg|ico|webp)$).*)",
+  ],
 };

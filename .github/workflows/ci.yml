@@ -1,0 +1,120 @@
+name: CI
+
+# 触发条件：推到 main、任何 PR、以及手动触发（R-12）
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# 同一分支的新提交取消旧的运行，省额度也省等待
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Next 的 rewrites 在 build 期读取；CI 里不需要真的连着后端
+  BACKEND_URL: http://localhost:8080
+  NEXT_TELEMETRY_DISABLED: "1"
+
+jobs:
+  web:
+    name: Web · lint / typecheck / test / build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      # --frozen-lockfile：lockfile 与 package.json 不一致时直接失败，
+      # 避免"本地能装、CI 装出另一套依赖"
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: ESLint
+        run: pnpm lint
+
+      - name: TypeScript 类型检查
+        run: pnpm typecheck
+
+      - name: 单元测试
+        run: pnpm test
+
+      - name: 生产构建
+        run: pnpm build
+
+  api:
+    name: Api · test / package
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      # 测试全部是 Mockito 单测，不需要 MySQL：CI 不额外起数据库
+      # verify = test + package，顺带验证 jar 打得出来
+      - name: 测试并打包
+        run: mvn -B --no-transfer-progress verify
+
+      - name: 上传测试报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: backend/target/surefire-reports/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  images:
+    name: Docker · 两个镜像都能构建
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # gha 缓存后端依赖 buildx，先显式建一个
+      - uses: docker/setup-buildx-action@v3
+
+      # 只构建不推送：验证 Dockerfile 与构建上下文没坏（R-14）
+      - name: 构建后端镜像
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: false
+          tags: tujang-api:ci
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
+
+      - name: 构建前端镜像
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: false
+          tags: tujang-web:ci
+          build-args: |
+            BACKEND_URL=http://api:8080
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,scope=web,mode=max

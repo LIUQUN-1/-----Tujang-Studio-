@@ -9,7 +9,12 @@
 ```bash
 API=http://localhost:8080
 SAMPLE=seed/samples/sample-1.jpg      # 演示用示例照片，仓库里自带
+JAR=/tmp/tujang-cookies.txt           # 身份是 Cookie；同一套命令必须复用同一个 jar
 ```
+
+> 为什么每个 curl 都带 `-c $JAR -b $JAR`：素材和任务都按用户隔离，
+> 不带 Cookie 的话每次请求都是新用户，第二步提交就会得到 `403 ASSET_FORBIDDEN`。
+> 第一次请求 `/api/me` 时后端会 `Set-Cookie`，curl 把它存进 jar，后面自动复用。
 
 ---
 
@@ -46,16 +51,19 @@ curl -s -X POST $API/api/dev/simulation \
 命令行等价（不需要前端）：
 
 ```bash
+# 先领一个身份（首次访问会 Set-Cookie，之后所有请求复用 jar）
+curl -s -c $JAR -b $JAR $API/api/me
+
 # 逐个上传两张素材，记下返回的 assetId
-curl -s -F "file=@$SAMPLE" -F "templateId=demo-postcard" $API/api/uploads
+curl -s -c $JAR -b $JAR -F "file=@$SAMPLE" -F "templateId=demo-postcard" $API/api/uploads
 # {"assetId":"01...","url":"/files/assets/01....jpg", ...}
 
 # 提交任务：立刻返回 202，不等待制作完成
-curl -s -X POST $API/api/tasks -H 'Content-Type: application/json' \
+curl -s -c $JAR -b $JAR -X POST $API/api/tasks -H 'Content-Type: application/json' \
   -d '{"templateId":"demo-postcard","assetIds":["<assetId1>","<assetId2>"]}'
 
 # 反复查询，能看到 currentStep 逐步推进
-curl -s $API/api/tasks/<taskId>
+curl -s -c $JAR -b $JAR $API/api/tasks/<taskId>
 ```
 
 ---

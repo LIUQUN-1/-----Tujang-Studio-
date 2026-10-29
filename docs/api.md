@@ -34,9 +34,14 @@
 ### 0.4 身份
 
 - Cookie `tujang_uid`（`HttpOnly; SameSite=Lax; Path=/`），值为 `app_user.id`（UUID）
-- 首次访问：后端新建用户 → `Set-Cookie`
+- 发放分两条路，避免"浏览器与 SSR 各持一个身份"：
+  - **页面请求**：Next 中间件在 `tujang_uid` 缺失时预生成 id，同时写进本次请求与响应（SSR 需要）
+  - **API 请求**：中间件不管；没有合法 Cookie 时由 Java 建用户并 `Set-Cookie`，
+    上游的这个响应头会经代理原样透传
+- 后端遇到"合法 UUID 但库里没有"的 id 会**采用它**建行（幂等），不另建空用户
 - 所有业务接口都从 Cookie 解析 `userId`，**不信任任何请求体里的 userId**
 - 越权访问他人资源统一返回 `403 ASSET_FORBIDDEN` / `403 TASK_FORBIDDEN`
+- 用 curl 演示时必须复用同一个 Cookie jar（`-c jar -b jar`），否则每次都是新用户
 
 ### 0.5 错误响应
 

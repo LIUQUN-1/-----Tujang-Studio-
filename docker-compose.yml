@@ -1,15 +1,17 @@
 # ---------------------------------------------------------------------------
-# 图匠工坊 Tujang Studio
+# 图匠工坊 Tujang Studio — 一键启动
 #
-# 标准用法（评审环境）：
+#   cp .env.example .env      # 可选：端口冲突时改 MYSQL_PORT / API_PORT / WEB_PORT
 #   docker compose up --build
-#   → Web http://localhost:3000 · API http://localhost:8080 · MySQL localhost:3306
 #
-# 当前阶段（P0）：api / web 尚在 profiles: ["app"] 下，默认只起 mysql。
-#   docker compose up -d mysql
-# P7 完成后会移除这两个 profile，使 up --build 默认启动三个服务。
+#   Web   http://localhost:3000   （评审从这里进）
+#   API   http://localhost:8080
+#   MySQL localhost:3306，库名 tujang（首次启动自动执行 db/01-schema.sql、db/02-seed.sql）
 #
-# 本机 3306 / 8080 已被占用时，用不提交的 .env 覆盖端口即可（见 .env.example）。
+# 三个服务的端口都写成 ${VAR:-默认值}：默认值就是标准端口，别人机器零配置可用；
+# 本机端口被占用时用不提交的 .env 覆盖即可（见 .env.example）。
+#
+# 启动顺序由健康检查驱动：mysql 健康 → api 启动 → api 健康 → web 启动。
 # ---------------------------------------------------------------------------
 
 services:
@@ -30,7 +32,7 @@ services:
       - "${MYSQL_PORT:-3306}:3306"
     volumes:
       - mysql-data:/var/lib/mysql
-      # 仅在数据卷为空时执行，顺序按文件名
+      # 只在数据卷为空时执行，按文件名顺序：01-schema.sql → 02-seed.sql
       - ./db:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
@@ -41,12 +43,14 @@ services:
     restart: unless-stopped
 
   api:
-    profiles: ["app"]
     build:
-      context: .
-      dockerfile: backend/Dockerfile
+      context: ./backend
+      dockerfile: Dockerfile
+    image: tujang-api:0.1.0
     container_name: tujang-api
     environment:
+      # dev 才会挂载 /api/dev/**（失败注入、耗时调节、切换用户）。
+      # 想验证"生产没有这些接口"：SPRING_PROFILES_ACTIVE=prod docker compose up -d api
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
       DB_HOST: mysql
       DB_PORT: 3306
@@ -55,29 +59,51 @@ services:
       DB_PASSWORD: ${MYSQL_PASSWORD:-tujang_pw}
       APP_STORAGE_DATA_DIR: /app/data
       APP_STORAGE_SEED_DIR: /app/seed
+      APP_TASK_POOL_SIZE: ${APP_TASK_POOL_SIZE:-4}
+      APP_TASK_QUEUE_CAPACITY: ${APP_TASK_QUEUE_CAPACITY:-50}
     ports:
       - "${API_PORT:-8080}:8080"
     volumes:
+      # 种子素材只读；运行时产物落具名卷，容器重建不丢
       - ./seed:/app/seed:ro
       - app-data:/app/data
     depends_on:
       mysql:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/api/health >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      # 首次要等 JVM 起 + 连接池建连
+      start_period: 45s
     restart: unless-stopped
 
   web:
-    profiles: ["app"]
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        # 编进 rewrites：容器内到后端用服务名，不能是 localhost
+        BACKEND_URL: http://api:8080
+    image: tujang-web:0.1.0
     container_name: tujang-web
     environment:
+      # 运行期同名变量：服务端组件取数（lib/server-api.ts）读它
       BACKEND_URL: http://api:8080
       NODE_ENV: production
     ports:
       - "${WEB_PORT:-3000}:3000"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+    healthcheck:
+      # 经 Next 代理打后端健康检查：这一条同时验证了 rewrite 链路是否通
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
     restart: unless-stopped
 
 volumes:
