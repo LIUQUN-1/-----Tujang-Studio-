@@ -18,7 +18,7 @@ import com.tujang.studio.web.CurrentUserInterceptor;
  *
  * <p>三类文件在物理上刻意分开，避免"种子素材被误删"和"运行时产物混进仓库"：
  * <ul>
- *   <li>{@code /files/seed/**} → 仓库内的 seed/（只读，模板封面与预置结果图）</li>
+ *   <li>{@code /files/seed/**} → 仓库内的 seed/（只读，模板封面与示例照片）</li>
  *   <li>{@code /files/assets/**} → data/assets（用户上传）</li>
  *   <li>{@code /files/results/**} → data/results（制作结果）</li>
  * </ul>

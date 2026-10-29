@@ -44,7 +44,7 @@ app:
   storage:
     # 运行时产物（用户上传、制作结果），随容器 volume 持久化
     data-dir: ${APP_STORAGE_DATA_DIR:./data}
-    # 只读种子素材（模板封面、预置结果图）
+    # 只读种子素材（模板封面、示例照片）
     seed-dir: ${APP_STORAGE_SEED_DIR:../seed}
 
   upload:

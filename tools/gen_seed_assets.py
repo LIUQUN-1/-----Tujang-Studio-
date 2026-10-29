@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-生成种子素材（模板封面 / 预置结果图 / 演示用示例照片）。
+生成种子素材（模板封面 / 演示用示例照片）。
 
 所有图片均由本脚本程序化生成，不使用任何第三方素材，故无版权问题。
 R-13 要求说明素材来源：来源即本文件，重新生成命令见 README「素材准备」。
@@ -10,7 +10,6 @@ R-13 要求说明素材来源：来源即本文件，重新生成命令见 READM
 
 输出：
     seed/covers/{templateId}.jpg    模板封面（列表卡片 / 详情页示例图）
-    seed/results/{templateId}.jpg   预置结果图（模拟生成结束时复制到 data/results）
     seed/samples/sample-{1,2,3}.jpg 演示时可直接上传的示例照片
 """
 
@@ -299,7 +298,7 @@ def build(width: int, height: int, title, subtitle, c1, c2, accent, motif: str, 
 
 
 def main() -> None:
-    for sub in ("covers", "results", "samples"):
+    for sub in ("covers", "samples"):
         os.makedirs(os.path.join(SEED, sub), exist_ok=True)
 
     np.random.seed(20261028)
@@ -310,9 +309,6 @@ def main() -> None:
                       seed_value=1000 + i, with_label=False)
         cover.save(os.path.join(SEED, "covers", f"{tid}.jpg"), quality=88, optimize=True)
 
-        result = build(1200, 900, title, f"{subtitle} · RESULT", c1, c2, accent, motif,
-                       seed_value=2000 + i, with_label=False)
-        result.save(os.path.join(SEED, "results", f"{tid}.jpg"), quality=88, optimize=True)
 
     for j, (name, c1, c2, accent, motif) in enumerate(SAMPLES):
         sample = build(1000, 750, f"示例照片 {j + 1}", "SAMPLE PHOTO", c1, c2, accent, motif,
@@ -331,3 +327,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

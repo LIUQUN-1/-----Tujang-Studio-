@@ -3,8 +3,8 @@
 > 素材制作网站：浏览模板 → 上传素材 → 提交制作任务 → 后台异步执行 → 查看历史与结果。
 > 小影科技 2027 校招题。
 
-**验收版本：tag `v1.1.0`**（`git rev-list -n 1 v1.1.0` 取完整 commit hash）
-· 账号登录（注册 / 登录 / 退出，BCrypt + 会话表）· 后端 63 例 + 前端 47 例测试
+**验收版本：tag `v1.2.0`**（`git rev-list -n 1 v1.2.0` 取完整 commit hash）
+· 账号登录（注册 / 登录 / 退出，BCrypt + 会话表）· 结果图由模板封面与素材合成 · 后端 67 例 + 前端 47 例测试
 · 冷启动验证见 [§7.1.1](#711-容器冷启动实测记录) 与 [§7.1.2](#712-干净目录克隆实测验收者视角)
 · 需求对照与"已验证 / 未验证"见 [§7.1](#71-需求对照)
 
@@ -43,6 +43,7 @@ POST /api/tasks ──> 202 + 完整任务对象（不等制作完成）
 | P7 | 测试、CI、容器交付、README 定稿 | ✅ 完成 |
 | P8 | 冷启动验收与收尾 | ✅ 完成 |
 | P9 | 账号登录（替换"Cookie 即身份"，含注册/登录/退出与会话管理） | ✅ 完成 |
+| P10 | 结果图真合成（模板封面 + 用户素材，替代复制预置图） | ✅ 完成 |
 
 ![模板列表](docs/p1-list.png)
 
@@ -274,7 +275,6 @@ mysql --default-character-set=utf8mb4 -u root -p < db/02-seed.sql
 | 目录 | 用途 | 访问路径 |
 |---|---|---|
 | `seed/covers/` | 9 张模板封面 | `/files/seed/covers/{templateId}.jpg` |
-| `seed/results/` | 9 张预置结果图 | `FINALIZE` 阶段复制到 `data/results/` 后以 `/files/results/...` 提供 |
 | `seed/samples/` | 3 张可直接上传的示例照片 | 演示时手动选择 |
 
 所有图片由 [tools/gen_seed_assets.py](tools/gen_seed_assets.py) 用 Pillow 程序化生成，
@@ -284,9 +284,9 @@ mysql --default-character-set=utf8mb4 -u root -p < db/02-seed.sql
 python tools/gen_seed_assets.py     # 需要 Pillow
 ```
 
-"生成"这一步的模拟方式：`FINALIZE` 从 `seed/results/` 里按模板挑一张预置图，
-复制进 `data/results/` 并写入 `task.result_url`，所以"结果"是真的可访问的图片文件，
-而不是前端拼出来的占位图。
+"生成"这一步的模拟方式：`FINALIZE` 用 Java2D 把**模板封面**和**用户上传的素材**合成一张
+1200×900 的成品图（详见 §3.3），写入 `data/results/{taskId}.jpg` 并落到 `task.result_url`。
+所以结果图是真的文件、真的由这次任务的输入决定——换一组素材，结果就不同。
 
 ---
 
@@ -385,6 +385,21 @@ python tools/gen_seed_assets.py     # 需要 Pillow
 - **进程内执行**，没有 MQ / Redis。代价是服务重启后不会自动续跑（见「已知限制」）。
 
 默认每步耗时 800 / 2500 / 600 ms，可通过开发接口调整（见 §4）。
+
+**第三步到底做了什么**（`CompositeResultProducer`，纯 `Graphics2D`，无外部依赖）：
+
+| 层 | 做法 |
+|---|---|
+| 背景 | 取模板封面 → 缩到 48×36 再放大铺满（廉价模糊）→ 压一层黑 47% |
+| 前景 | 用户素材按数量排版：1 张满幅 / 2 张并排 / 3 张一大两小；每张按 `object-fit: cover` 填满圆角框并描 2px 细边 |
+| 收尾 | 四角暗角 + 底部渐变压暗 + 右下水印（`TUJANG STUDIO #任务号`，只用 ASCII，见下） |
+
+结果因此**由这次任务的输入决定**：换一张素材，成品就不同；同模板同素材则每次都一样（确定性）。
+
+> 水印为什么只有 ASCII：运行镜像是 `alpine` + JRE，不保证带中文字体，画中文会变方块。
+> 代码用 `Font.canDisplay('T')` 判断，字体不可用时直接跳过——装饰失败不该让任务失败。
+
+![合成结果：两张素材并排，背景是模板封面](docs/p10-result.jpg)
 
 ### 3.4 前端轮询约定
 
@@ -519,7 +534,7 @@ Cookie 转发给 Java。登录态写在 Cookie 里、由 Java 校验，Next 只�
 
 ### 6.1 测试清单
 
-后端 63 例（`mvn -B -f backend/pom.xml test`，全部是 Mockito / standalone MockMvc 单测，不需要数据库）：
+后端 67 例（`mvn -B -f backend/pom.xml test`，全部是 Mockito / standalone MockMvc 单测，不需要数据库）：
 
 | 测试类 | 例数 | 覆盖 |
 |---|---|---|
@@ -530,7 +545,7 @@ Cookie 转发给 Java。登录态写在 Cookie 里、由 Java 校验，Next 只�
 | `SimulationRegistryTest` | 6 | NEXT 一次性 / ALL 持续 / 仅耗时 / 清空 |
 | `TemplateServiceTest` | 5 | 分类切换、空分类、映射、404、计数 |
 | `ImageInspectorTest` | 5 | 魔数识别与损坏图片 |
-| `SeedResultProducerTest` | 3 | 结果图挑选与复制 |
+| `CompositeResultProducerTest` | 7 | 封面背景 + 素材排版、确定性、换素材则结果不同、缺封面仍成功、素材丢失失败 |
 | `SessionTokensTest` | 3 | token 唯一/URL 安全、SHA-256 摘要稳定且不含原文 |
 | `GlobalExceptionHandlerTest` | 2 | 请求体不是合法 JSON / 字段类型不对 → 400，而不是 500 |
 | `HealthControllerTest` | 1 | 健康检查 |
@@ -583,7 +598,7 @@ UI 交互人工确认并留截图（`docs/*.png`）。
 | R-09 刷新恢复与记录 | 服务端首屏 + 客户端接管轮询；历史页含结果缩略图 | ✅ | 处理中按 F5 后仍在跟踪并自行完成（`docs/p9-history.png`） |
 | R-10 身份与个人记录 | **账号密码登录**（BCrypt + 会话表）+ 按人隔离 | ✅ | A 有 1 条 / B 有 0 条 / 用密码重新登录 A 仍有 1 条；B 访问 A 的任务 403；退出后 `/api/me` 401 |
 | R-11 视觉与可用性 | 桌面主界面、390px 可操作、语义标签、全局 `:focus-visible` | ⚠️ | 桌面与 390px 截图；上传位/图标按钮均有 `aria-label`；**Tab 顺序未逐键走查** |
-| R-12 CI 与关键测试 | 前端 47 例 + 后端 63 例；三个 CI job | ⚠️ | 测试与构建命令本地全绿；**Actions 未在 GitHub 上真实调度过**（仓库无远端） |
+| R-12 CI 与关键测试 | 前端 47 例 + 后端 67 例；三个 CI job | ⚠️ | 测试与构建命令本地全绿；**Actions 未在 GitHub 上真实调度过**（仓库无远端） |
 | R-13 材料与说明 | 本 README 七项 + `docs/` | ✅ | 见目录与各节 |
 | R-14 容器交付 | `docker compose up --build` 三服务 | ✅ | P7 与 P8 两次冷启动，含干净目录 `git clone` 后从零构建 |
 
@@ -664,14 +679,14 @@ docker compose up -d --build
 
 - 模拟配置存在内存里，后端重启即失效（它是开发工具，不是业务状态）。
 - 上传位移除只清本地预览，不调用服务端 `DELETE`：已提交的素材不能删，未提交的会留下孤儿文件。
-- 结果图是预置图复制的，不是真合成；同一模板的多次制作结果可能相同。
+- 结果图是**版式合成**（封面背景 + 素材按数量排版 + 水印），不是 AI 生成，也没有滤镜/风格迁移；同一模板同一组素材，结果每次都一样（确定性是刻意的）。版式只有"按素材数量"三档（1/2/3 张），9 个模板之间没有各自的排版差异——封面背景承担了"像这个模板"的部分。
 - 未做浏览器 E2E，UI 交互为人工验证 + 截图。
 - 数据库无迁移框架：改表结构需要手写 `ALTER` 或重建数据卷（见 §8.2）。
 
 ### 7.4 实际投入
 
 按 `plan.md` 的估算约 7–7.5 人日（P0 0.5 / P1 0.75 / P2 0.75 / P3 1.5 / P4 1.5 / P5 0.5 / P6 0.5 / P7 1.0 / P8 0.5），
-P9（账号登录）是题目要求之外补做的，约 0.5 人日。
+P9（账号登录）与 P10（结果图合成）是题目要求之外补做的，各约 0.5 人日。
 实际节奏与之接近，其中**约三分之一时间花在真实环境验证**（容器冷启动、并发首屏、字符编码、
 端口占用、Windows 路径），而不是写业务代码——这些也正是 bug 最集中的地方，记录在 `plan.md`
 每个阶段的「实际与计划的偏差」里。
@@ -806,5 +821,6 @@ Get-NetTCPConnection -LocalPort 8090 -State Listen | ForEach-Object { Stop-Proce
 - [docs/ai-workflow.md](docs/ai-workflow.md) — AI 工作流说明
 - [frontend/src/store/task-store.ts](frontend/src/store/task-store.ts) — 前端异步状态的核心
 - [backend/src/main/java/com/tujang/studio/service/TaskPipeline.java](backend/src/main/java/com/tujang/studio/service/TaskPipeline.java) — 后台三步执行的核心
+
 
 
