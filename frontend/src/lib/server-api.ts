@@ -56,6 +56,18 @@ async function serverGet<T>(path: string): Promise<T> {
     } catch {
       // 非 JSON 错误体
     }
+
+    // 后端的资源兜底处理器（NoResourceFoundException）也返回 404 + NOT_FOUND，
+    // 但那意味着"根本没有这个接口"，和"模板不存在"（TEMPLATE_NOT_FOUND）不是一回事。
+    // 最常见的原因是后端进程还是旧版本，或者 BACKEND_URL 指错了服务。
+    if (res.status === 404 && code === "NOT_FOUND") {
+      throw new ApiError(
+        404,
+        "API_NOT_FOUND",
+        `后端没有这个接口：${path}（${serverApiBase()}）。` +
+          "常见原因：后端进程还是旧代码 / BACKEND_URL 指错了地址，重启后端试试",
+      );
+    }
     throw new ApiError(res.status, code, message);
   }
 

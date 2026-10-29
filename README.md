@@ -779,6 +779,17 @@ docker compose up -d --build
 
 ## 常见问题
 
+**页面控制台报「后端没有这个接口：/api/me」（或 404「请求的资源不存在」）**
+前端是当前版本，但后端进程还是旧代码——最常见的是 VS Code 里的调试会话一直没重启，
+加载的还是几天前的 `target/classes`。症状是页面能看模板，但右上角显示未登录、`/api/tasks` 也是 404。
+
+```bash
+curl -o /dev/null -w '%{http_code}\n' localhost:8090/api/me
+# 401 = 正常（未登录）；404 = 后端是旧版本
+```
+
+修复：停掉旧进程再重新启动后端（VS Code 里 `■` 然后 `▶`，或 `java -jar` 重新打包的 jar）。
+
 **数据库里中文变成乱码（形如 `æ—…è¡Œ…`）**
 MySQL 官方镜像的容器里 `LANG` 为空，`mysql` 客户端会退化成 `latin1`，
 把 UTF-8 脚本里的中文按 latin1 解释再转存成 utf8mb4，于是双重编码。

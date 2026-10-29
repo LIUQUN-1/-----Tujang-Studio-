@@ -32,12 +32,16 @@ export const viewport: Viewport = {
 export const dynamic = "force-dynamic";
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  // 身份由中间件保证存在；后端不可用时降级为"未登录"，不让整页报错
+  // 取不到身份就按"未登录"渲染：后端暂时不可用不该让整页白屏。
+  //
+  // 只打一行文本、不把 Error 对象交给 console——Next 会把服务端日志连同堆栈回放到浏览器，
+  // 一条"后端是旧版本"的 404 会变成一屏红色堆栈，反而盖住真正的原因。
   let me: Me | null = null;
   try {
     me = await getMe();
   } catch (err) {
-    console.error("[layout] getMe failed", err);
+    const reason = err instanceof Error ? err.message : String(err);
+    console.warn(`[layout] 取当前用户失败，按未登录渲染：${reason}`);
     me = null;
   }
 
