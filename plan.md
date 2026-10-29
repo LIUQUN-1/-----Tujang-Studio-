@@ -375,7 +375,7 @@ B 的 Cookie 访问 A 的任务 → 403 `TASK_FORBIDDEN`；连续 5 次"全新�
 
 - [x] 按"验收者视角"重走：`git clone` 到空目录 → `cp .env.example .env` → `up -d --build` → 五段演示全跑
 - [x] 清点 §6 矩阵每一行为"已验证 / 部分验证 / 未验证"，结论写进 README §7.1（含两处没做到满分的地方）
-- [x] 打 tag `v1.0.0`，README 顶部指向该 tag（hash 用 `git rev-parse` 取，见下方偏差 1）
+- [x] 打 tag `v1.0.0`，README 顶部指向该 tag（hash 用 `git rev-list -n 1 v1.0.0` 取，见下方偏差 1）
 - [x] 检查无密钥、无大文件、无 `data/`/`target/`/`node_modules` 残留入库
 
 **完成判据**：干净目录克隆 → compose 起来 → 五个演示全通（✅ 实测记录见 README §7.1.2）。
@@ -384,7 +384,9 @@ B 的 Cookie 访问 A 的任务 → 403 `TASK_FORBIDDEN`；连续 5 次"全新�
 
 1. **验收 commit 用 tag 表示，而不是把 hash 写死在 README**。写 hash 这个动作本身会产生新提交，
    写进去的 hash 立刻过期；改完再 amend 又会变。用 annotated tag `v1.0.0` 指向最终提交，
-   README 写 `git rev-parse v1.0.0`，任何时候都能取到正确 hash，也不会自己过期。
+   README 写 `git rev-list -n 1 v1.0.0`，任何时候都能取到正确 hash，也不会自己过期。
+   （顺带记一笔：annotated tag 用 `git rev-parse` 取到的是 tag 对象而不是 commit，
+   要用 `rev-list -n 1` 或 `rev-parse v1.0.0^{commit}`——这就是上面把命令写成 `rev-list` 的原因。）
 2. **干净目录里必须改端口**：本机 3306/8080/3000 都被别的项目/进程占着，所以克隆后
    `cp .env.example .env` 之后改了 `MYSQL_PORT/API_PORT/WEB_PORT`。README 里本来就写了这一步，
    但这意味着"默认端口零配置即用"这条**没有在真机上被完整执行过**——端口映射是纯配置，
