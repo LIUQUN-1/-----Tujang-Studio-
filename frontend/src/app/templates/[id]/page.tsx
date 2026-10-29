@@ -4,7 +4,7 @@ import type { Metadata } from "next";
 
 import { ApiError } from "@/lib/api";
 import { formatBytes, formatMimeTypes } from "@/lib/format";
-import { getTemplate, listTasksServer } from "@/lib/server-api";
+import { getMe, getTemplate, listTasksServer } from "@/lib/server-api";
 import { TemplateComposer } from "@/components/template-composer";
 import { TaskList } from "@/components/task-list";
 
@@ -34,8 +34,11 @@ export default async function TemplateDetailPage({ params }: { params: Params })
     throw err;
   });
 
-  // 该模板下的历史任务：服务端先给一版，刷新后不必等轮询就能看到
-  const allTasks = await listTasksServer(50);
+  // 该模板下的历史任务：服务端先给一版，刷新后不必等轮询就能看到。
+  // 未登录不发这个请求——任务按用户隔离，匿名拉只会拿到 401
+  const me = await getMe();
+  const authed = me !== null;
+  const allTasks = authed ? await listTasksServer(50) : [];
   const initialTasks = allTasks.filter((task) => task.templateId === template.id);
 
   return (
@@ -90,7 +93,7 @@ export default async function TemplateDetailPage({ params }: { params: Params })
             </div>
           </dl>
 
-          <TemplateComposer template={template} />
+          <TemplateComposer template={template} authed={authed} />
         </section>
 
         {/* 右：该模板下的制作记录 */}
@@ -99,7 +102,7 @@ export default async function TemplateDetailPage({ params }: { params: Params })
             <h2 id="tpl-history" className="text-sm font-medium text-zinc-300">
               制作记录
             </h2>
-            <span className="text-[11px] text-zinc-600">按创建时间倒序</span>
+            <span className="text-[11px] text-zinc-600">{authed ? "按创建时间倒序" : "登录后可见"}</span>
           </div>
 
           <TaskList
@@ -107,9 +110,11 @@ export default async function TemplateDetailPage({ params }: { params: Params })
             templateId={template.id}
             empty={
               <div className="mt-4 rounded-xl border border-dashed border-white/10 px-4 py-14 text-center">
-                <p className="text-sm text-zinc-400">还没有制作记录</p>
+                <p className="text-sm text-zinc-400">{authed ? "还没有制作记录" : "登录后查看你的制作记录"}</p>
                 <p className="mx-auto mt-1 max-w-xs text-xs leading-relaxed text-zinc-600">
-                  提交任务后，处理进度和结果会出现在这里；离开页面或刷新都不会中断后台处理。
+                  {authed
+                    ? "提交任务后，处理进度和结果会出现在这里；离开页面或刷新都不会中断后台处理。"
+                    : "记录按账号隔离，登录后这里会显示你提交过的任务。"}
                 </p>
               </div>
             }

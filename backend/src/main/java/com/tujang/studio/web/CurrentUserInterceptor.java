@@ -5,18 +5,18 @@ import org.springframework.web.servlet.HandlerInterceptor;
 
 import com.tujang.studio.auth.CurrentUserHolder;
 import com.tujang.studio.domain.AppUser;
-import com.tujang.studio.service.UserService;
-import com.tujang.studio.support.UserCookie;
+import com.tujang.studio.service.AuthService;
+import com.tujang.studio.support.SessionCookie;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 /**
- * 身份拦截器：把 Cookie 解析成用户，写进请求属性与 ThreadLocal。
+ * 身份拦截器：把会话 Cookie 解析成用户，写进请求属性与 ThreadLocal。
  *
- * <p>为什么用拦截器而不是在每个 Controller 里解析：身份是横切关注点，
- * 放到一处之后，AssetService / TaskService 只依赖 {@code CurrentUserProvider}，
- * 对 HTTP 一无所知。
+ * <p><b>解析失败不拦截请求</b>——没登录是正常状态（浏览模板不需要账号）。
+ * 需要登录的接口会通过 {@code CurrentUserProvider} 抛 401，那是业务语义；
+ * 在这里统一拦掉的话，公开接口就得维护一份白名单，容易漏。
  *
  * <p>{@code afterCompletion} 一定清 ThreadLocal——Tomcat 线程会被复用，
  * 不清就会把上一个人的身份带给下一个请求。
@@ -26,21 +26,18 @@ public class CurrentUserInterceptor implements HandlerInterceptor {
 
     public static final String ATTR_USER = "tujang.currentUser";
 
-    private final UserService userService;
+    private final AuthService authService;
 
-    public CurrentUserInterceptor(UserService userService) {
-        this.userService = userService;
+    public CurrentUserInterceptor(AuthService authService) {
+        this.authService = authService;
     }
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
-        UserService.Resolution resolution = userService.resolveOrCreate(UserCookie.read(request));
-        if (resolution.issuedCookie()) {
-            // 首次访问或 Cookie 非法：把服务端新建的 id 发回去
-            response.addCookie(UserCookie.of(resolution.user().id()));
-        }
-        CurrentUserHolder.set(resolution.user().id());
-        request.setAttribute(ATTR_USER, resolution.user());
+        authService.resolveUser(SessionCookie.read(request)).ifPresent(user -> {
+            CurrentUserHolder.set(user.id());
+            request.setAttribute(ATTR_USER, user);
+        });
         return true;
     }
 
@@ -50,11 +47,9 @@ public class CurrentUserInterceptor implements HandlerInterceptor {
         CurrentUserHolder.clear();
     }
 
-    public static AppUser userOf(HttpServletRequest request) {
+    /** 当前登录用户；没登录返回 {@code null}（调用方自己决定 401 还是按匿名处理）。 */
+    public static AppUser userOrNull(HttpServletRequest request) {
         Object user = request.getAttribute(ATTR_USER);
-        if (user instanceof AppUser appUser) {
-            return appUser;
-        }
-        throw new IllegalStateException("当前请求没有用户上下文");
+        return user instanceof AppUser appUser ? appUser : null;
     }
 }

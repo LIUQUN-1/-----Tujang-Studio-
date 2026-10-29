@@ -18,13 +18,15 @@ import { activeTaskIds, useTaskStore } from "@/store/task-store";
  *
  * <p>id 集合作为 effect 依赖：集合一变就重建定时器并 abort 上一轮的请求，
  * 因此不会出现旧请求把新状态覆盖回去。
+ *
+ * @param enabled 未登录时传 false：既不拉取也不起定时器，避免匿名访客白打接口
  */
-export function useTaskPoller(intervalMs = 1500) {
+export function useTaskPoller(enabled = true, intervalMs = 1500) {
   const entries = useTaskStore((state) => state.entries);
   const activeKey = useMemo(() => activeTaskIds(entries).join(","), [entries]);
 
   useEffect(() => {
-    if (!activeKey) {
+    if (!enabled || !activeKey) {
       return;
     }
     const ids = activeKey.split(",");
@@ -58,5 +60,5 @@ export function useTaskPoller(intervalMs = 1500) {
       clearInterval(timer);
       controller.abort();
     };
-  }, [activeKey, intervalMs]);
+  }, [enabled, activeKey, intervalMs]);
 }

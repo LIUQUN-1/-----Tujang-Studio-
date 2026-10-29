@@ -62,8 +62,19 @@ async function serverGet<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-export function getMe(): Promise<Me> {
-  return serverGet<Me>("/api/me");
+/**
+ * 当前登录用户。**未登录返回 null，不抛错**：
+ * 大部分页面在匿名状态下也要正常渲染（浏览模板），把 401 当成异常到处 try/catch 更糟。
+ */
+export async function getMe(): Promise<Me | null> {
+  try {
+    return await serverGet<Me>("/api/me");
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) {
+      return null;
+    }
+    throw err;
+  }
 }
 
 export function getCategories(): Promise<Category[]> {

@@ -54,7 +54,16 @@ describe("useTaskPoller", () => {
   it("没有待处理任务时不发任何请求", async () => {
     useTaskStore.getState().upsertMany([task({ id: "done", status: "SUCCEEDED" })]);
 
-    renderHook(() => useTaskPoller(1000));
+    renderHook(() => useTaskPoller(true, 1000));
+    await tick(5000);
+
+    expect(fetchTaskMock).not.toHaveBeenCalled();
+  });
+
+  it("未登录（enabled=false）时既不拉取也不起定时器", async () => {
+    useTaskStore.getState().upsertMany([task({ id: "a", status: "PROCESSING" })]);
+
+    renderHook(() => useTaskPoller(false, 1000));
     await tick(5000);
 
     expect(fetchTaskMock).not.toHaveBeenCalled();
@@ -64,7 +73,7 @@ describe("useTaskPoller", () => {
     useTaskStore.getState().upsertMany([task({ id: "a", status: "PROCESSING" })]);
     fetchTaskMock.mockResolvedValue(task({ id: "a", status: "SUCCEEDED", currentStep: "FINALIZE" }));
 
-    renderHook(() => useTaskPoller(1000));
+    renderHook(() => useTaskPoller(true, 1000));
     await tick(0);
 
     expect(fetchTaskMock).toHaveBeenCalledTimes(1);
@@ -86,7 +95,7 @@ describe("useTaskPoller", () => {
         : task({ id: "b", status: "PROCESSING", currentStep: "FINALIZE" }),
     );
 
-    renderHook(() => useTaskPoller(1000));
+    renderHook(() => useTaskPoller(true, 1000));
     await tick(0);
 
     const entries = useTaskStore.getState().entries;
@@ -99,7 +108,7 @@ describe("useTaskPoller", () => {
     useTaskStore.getState().upsertMany([task({ id: "a", status: "PROCESSING", currentStep: "GENERATE" })]);
     fetchTaskMock.mockRejectedValue(new Error("network down"));
 
-    renderHook(() => useTaskPoller(1000));
+    renderHook(() => useTaskPoller(true, 1000));
     await tick(0);
 
     const entry = useTaskStore.getState().entries.a;
@@ -114,7 +123,7 @@ describe("useTaskPoller", () => {
       task({ id: "a", status: "PROCESSING", currentStep: "FINALIZE" }),
     );
 
-    renderHook(() => useTaskPoller(1000));
+    renderHook(() => useTaskPoller(true, 1000));
     await tick(0);
     expect(useTaskStore.getState().entries.a.queryState).toBe("error");
 
@@ -124,3 +133,4 @@ describe("useTaskPoller", () => {
     expect(entry.task.currentStep).toBe("FINALIZE");
   });
 });
+

@@ -58,6 +58,10 @@ export async function apiPost<T>(path: string, body: unknown, signal?: AbortSign
   if (!res.ok) {
     throw await toApiError(res);
   }
+  // 204 没有响应体（例如退出登录），此时 res.json() 会抛错
+  if (res.status === 204) {
+    return undefined as T;
+  }
   return (await res.json()) as T;
 }
 

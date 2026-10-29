@@ -11,6 +11,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
+import com.tujang.studio.auth.NotAuthenticatedException;
 import com.tujang.studio.web.dto.ErrorResponse;
 
 /**
@@ -26,6 +27,13 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleApi(ApiException ex) {
         return ResponseEntity.status(ex.status())
                 .body(ErrorResponse.of(ex.code(), ex.getMessage(), ex.fields()));
+    }
+
+    /** 没登录（或会话过期）：401，前端据此跳登录页，而不是当成"任务失败"。 */
+    @ExceptionHandler(NotAuthenticatedException.class)
+    public ResponseEntity<ErrorResponse> handleUnauthenticated(NotAuthenticatedException ex) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(ErrorResponse.of("UNAUTHORIZED", ex.getMessage()));
     }
 
     /** 路径参数类型不匹配（例如把非数字当 id）：属于请求问题，不是 500。 */

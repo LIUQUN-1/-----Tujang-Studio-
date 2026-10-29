@@ -33,15 +33,12 @@
 
 ### 0.4 身份
 
-- Cookie `tujang_uid`（`HttpOnly; SameSite=Lax; Path=/`），值为 `app_user.id`（UUID）
-- 发放分两条路，避免"浏览器与 SSR 各持一个身份"：
-  - **页面请求**：Next 中间件在 `tujang_uid` 缺失时预生成 id，同时写进本次请求与响应（SSR 需要）
-  - **API 请求**：中间件不管；没有合法 Cookie 时由 Java 建用户并 `Set-Cookie`，
-    上游的这个响应头会经代理原样透传
-- 后端遇到"合法 UUID 但库里没有"的 id 会**采用它**建行（幂等），不另建空用户
-- 所有业务接口都从 Cookie 解析 `userId`，**不信任任何请求体里的 userId**
+- 登录后服务端签发会话 Cookie：`tujang_sid`（`HttpOnly; SameSite=Lax; Path=/`），
+  值是 32 字节随机数；库里 `user_session` 只存它的 SHA-256
+- 没有 Cookie / 会话过期 / 用户被删 → 视为匿名；受保护接口返回 `401 UNAUTHORIZED`
+- 所有业务接口都从会话解析 `userId`，**不信任任何请求体里的 userId**
 - 越权访问他人资源统一返回 `403 ASSET_FORBIDDEN` / `403 TASK_FORBIDDEN`
-- 用 curl 演示时必须复用同一个 Cookie jar（`-c jar -b jar`），否则每次都是新用户
+- 用 curl 演示时必须复用同一个 Cookie jar（`-c jar -b jar`），否则每次都是未登录
 
 ### 0.5 错误响应
 
@@ -65,13 +62,17 @@
 
 | HTTP | code | 场景 |
 |---|---|---|
-| 400 | `VALIDATION_FAILED` | 参数缺失/格式错/数量不符 |
+| 400 | `VALIDATION_FAILED` | 参数缺失/格式错/数量不符/用户名或密码不合规 |
 | 400 | `FILE_NOT_DECODABLE` | 文件无法解码为图片 |
+| 401 | `UNAUTHORIZED` | 未登录或会话已过期 |
+| 401 | `INVALID_CREDENTIALS` | 登录失败（不区分用户不存在与密码错） |
 | 403 | `ASSET_FORBIDDEN` | 素材不属于当前用户 |
 | 403 | `TASK_FORBIDDEN` | 任务不属于当前用户 |
 | 404 | `TEMPLATE_NOT_FOUND` | 模板不存在 |
 | 404 | `TASK_NOT_FOUND` | 任务不存在 |
 | 404 | `ASSET_NOT_FOUND` | 素材不存在 |
+| 409 | `USERNAME_TAKEN` | 注册时用户名已被占用 |
+| 409 | `ASSET_IN_USE` | 素材已被任务引用，不能删除 |
 | 413 | `FILE_TOO_LARGE` | 超过模板 `maxFileSizeBytes` |
 | 415 | `UNSUPPORTED_MEDIA_TYPE` | 不在模板 `acceptedMimeTypes` 内 |
 | 500 | `INTERNAL_ERROR` | 兜底，**不返回堆栈** |
@@ -287,52 +288,81 @@
 
 ---
 
-## 5. 身份
+## 5. 身份与登录
 
-身份就是一个 Cookie，没有账号密码：
+账号体系：`app_user` 是账号表（`username` + BCrypt 密码哈希）。登录成功后服务端签发一个
+随机 token 放进 HttpOnly Cookie，库里只存它的 SHA-256。
 
 | 项 | 值 |
 |---|---|
-| 名字 | `tujang_uid` |
-| 值 | `app_user.id`（UUID） |
+| Cookie | `tujang_sid`，32 字节随机数的 base64url |
 | 属性 | `HttpOnly; SameSite=Lax; Path=/; Max-Age=30d`（生产应再加 `Secure`） |
-| 谁发放 | Next 中间件在首次访问时生成；后端在"Cookie 缺失/格式非法"时兜底生成 |
+| 服务端存储 | `user_session.token_hash = sha256(token)`，30 天过期，退出即删 |
+| 用户名 | 3~24 位字母/数字/下划线；大小写不敏感（表 collation 决定） |
+| 密码 | 至少 8 位、最多 72 字节（BCrypt 上限），**只存哈希** |
+| 权限边界 | 浏览模板公开；上传、提交、查询自己的任务需要登录 |
 
-服务端解析规则（`UserService`）：
+**公开 / 需要登录**
 
-1. Cookie 是合法 UUID 且库里有 → 就是这个用户；
-2. Cookie 是合法 UUID 但库里没有 → **采用该 id 建行**（前端预生成的场景，避免多建空用户）；
-3. 没有或格式非法 → 服务端新建一个，并通过 `Set-Cookie` 发回。
+| 接口 | 匿名访问 |
+|---|---|
+| `GET /api/health`、`GET /api/categories`、`GET /api/templates*`、`GET /files/**` | ✅ 允许 |
+| `GET /api/me`、`POST /api/uploads`、`DELETE /api/uploads/{id}`、`POST /api/tasks`、`GET /api/tasks*` | ❌ `401 UNAUTHORIZED` |
 
-> **这不是认证**：知道对方 UUID 就能看到对方的记录。本题不要求登录体系，
-> 这里只保证"记录按人隔离 + id 不可猜"，边界在 README 里写明。
+`GET /api/dev/**` 不需要身份，但它只在 `dev` profile 存在。
 
-### 5.1 `GET /api/me`
+### 5.1 `POST /api/auth/register` — 注册
+
+```json
+{ "username": "alice", "password": "secret123" }
+```
+
+- 成功：`201` + 5.5 的 `MeDto`，并 `Set-Cookie: tujang_sid=...`（注册即登录）
+- 用户名重复：`409 USERNAME_TAKEN`（靠唯一索引，不靠"先查后插"，并发下也只有一个人成功）
+- 格式不合法：`400 VALIDATION_FAILED`，`fields.username` / `fields.password` 给出具体原因
+
+### 5.2 `POST /api/auth/login` — 登录
+
+```json
+{ "username": "alice", "password": "secret123" }
+```
+
+- 成功：`200` + `MeDto` + `Set-Cookie`
+- 失败：`401 INVALID_CREDENTIALS`"用户名或密码不正确"
+  ——**不区分"用户不存在"和"密码错"**，否则等于送了一个账号枚举接口；
+  用户不存在时仍会跑一次 BCrypt 比对，让两条路径耗时接近
+
+### 5.3 `POST /api/auth/logout` — 退出
+
+`204`，删除服务端会话行并清 Cookie。无请求体；重复调用也是 204。
+
+### 5.4 `GET /api/me` — 当前用户
 
 ```json
 {
   "userId": "0f0c1b3e-0000-4000-8000-000000000001",
-  "displayName": "设计师 7F2A",
-  "createdAt": "2026-10-28T13:30:15.123Z",
+  "username": "alice",
+  "displayName": "alice",
+  "createdAt": "2026-10-29T03:06:41.107Z",
   "devTools": true
 }
 ```
 
-`devTools` 表示当前后端是否跑在 `dev` profile——前端据此显示「切换用户」这类开发入口；
-生产环境为 `false`，入口不出现。
+- 未登录：`401 UNAUTHORIZED`（不是返回一个"匿名用户"——语义上"没有人"更准确）
+- `devTools` 表示后端是否跑在 `dev` profile，前端据此显示开发入口
 
-### 5.2 `POST /api/dev/users/switch`（仅 dev）
+### 5.5 边界与已知限制
 
-请求体可选：
+- **不是"记住我"之外的持久认证**：Cookie 只有 30 天，没有刷新机制；过期后重新登录。
+- **没有邮箱验证、找回密码、改密码、多设备管理**：题面不要求，README 的已知限制里列了。
+- **没有登录失败限流**：暴力破解只能靠 BCrypt 的算力成本挡，生产应加 IP/账号维度限流。
+- **HTTP 下没有 `Secure`**：本地演示用 http，生产部署必须开启并配 HTTPS。
+- 数据库泄露时攻击者拿到的是 `sha256(token)`，无法还原成可用 Cookie。
 
-```json
-{ "userId": "0f0c1b3e-..." }
-```
+### 5.6 演示账号（仅 dev）
 
-- 不传或目标不存在 → 新建一个用户并下发新 Cookie（用于演示"换一个人用"）；
-- 传了已存在的 `userId` → 切回该用户（前端「切回上一个」用它）。
-
-响应为 5.1 结构，同时 `Set-Cookie` 新身份。生产 profile 下该路径 404。
+后端在 `dev` profile 启动时会创建 `demo / demo1234`（见 `DemoAccountInitializer`）。
+生产 profile 不创建任何内置账号。评审也可以直接注册一个新账号。
 
 ---
 

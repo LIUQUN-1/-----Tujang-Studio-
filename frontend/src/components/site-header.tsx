@@ -33,7 +33,19 @@ export function SiteHeader({ user }: { user: Me | null }) {
             </Link>
           </nav>
           <span aria-hidden className="mx-1 h-4 w-px bg-white/10" />
-          <UserMenu user={user} />
+
+          {user ? (
+            <UserMenu user={user} />
+          ) : (
+            <div className="flex items-center gap-1">
+              <Link href="/login" className="rounded-lg px-3 py-2 hover:bg-white/[0.06] hover:text-white">
+                登录
+              </Link>
+              <Link href="/register" className="btn-primary px-3 py-1.5 text-xs">
+                注册
+              </Link>
+            </div>
+          )}
         </div>
       </div>
     </header>

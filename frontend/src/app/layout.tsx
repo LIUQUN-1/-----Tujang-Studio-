@@ -45,7 +45,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang="zh-CN">
       <body className="min-h-screen">
         {/* 全局任务观察者：刷新恢复 + 持续跟踪未完成任务，不渲染任何内容 */}
-        <TaskWatcher />
+        <TaskWatcher authed={me !== null} />
         <SiteHeader user={me} />
         <main className="mx-auto w-full max-w-[1400px] px-5 py-8 sm:px-8 sm:py-10">{children}</main>
       </body>

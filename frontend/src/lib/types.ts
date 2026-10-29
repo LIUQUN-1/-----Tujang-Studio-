@@ -42,12 +42,15 @@ export type AssetDto = {
   createdAt: string;
 };
 
-/** 当前身份（docs/api.md §5.1） */
+/** 当前登录用户（docs/api.md §5.1） */
 export type Me = {
   userId: string;
+  /** 登录名 */
+  username: string;
+  /** 展示名，默认与 username 相同 */
   displayName: string;
   createdAt: string | null;
-  /** 后端是否跑在 dev profile：前端据此显示"切换用户"这类开发入口 */
+  /** 后端是否跑在 dev profile：前端据此显示开发入口 */
   devTools: boolean;
 };
 

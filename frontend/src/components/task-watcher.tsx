@@ -16,13 +16,17 @@ import { useTaskStore } from "@/store/task-store";
  *   <li><b>持续跟踪</b>——轮询只针对未完成的任务；全部结束后定时器自动停。</li>
  * </ol>
  *
- * <p>它不渲染任何东西。离开站点（layout 卸载）时轮询器会 abort 并清定时器；
- * 切换用户时由上层调用 {@code reset()} 清空，避免把上一个人的任务带过来。
+ * <p>它不渲染任何东西。**未登录时完全不发请求**：任务按用户隔离，匿名访客
+ * 拉列表只会拿到 401，没有意义还白打一次接口。
+ * 退出登录会整页跳转（layout 重新挂载），上一个身份的轮询随卸载停止。
  */
-export function TaskWatcher() {
+export function TaskWatcher({ authed }: { authed: boolean }) {
   const hydrate = useTaskStore((state) => state.upsertMany);
 
   useEffect(() => {
+    if (!authed) {
+      return;
+    }
     let alive = true;
     listTasks()
       .then((tasks) => {
@@ -36,9 +40,9 @@ export function TaskWatcher() {
     return () => {
       alive = false;
     };
-  }, [hydrate]);
+  }, [authed, hydrate]);
 
-  useTaskPoller();
+  useTaskPoller(authed);
 
   return null;
 }

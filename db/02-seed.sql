@@ -60,9 +60,10 @@ ON DUPLICATE KEY UPDATE
   `sort_order`           = VALUES(`sort_order`);
 
 -- ---------------------------------------------------------------------------
--- 演示用户：固定 UUID，便于在 P1~P5 尚无 Cookie 流程时直接联调；
--- P6 接入 Cookie 后仍可用 POST /api/dev/users/switch 切走再切回。
+-- 演示账号在 dev profile 下由后端启动时创建（见 DemoAccountInitializer）：
+--   demo / demo1234
+-- 为什么不把 BCrypt 哈希写死在这里：哈希是"实现细节 + 盐"，写死在 SQL 里
+-- 既容易过期又无法校验；交给与注册完全相同的代码路径创建，行为才一致。
+-- 生产（prod profile）不会创建任何内置账号，只能注册。
 -- ---------------------------------------------------------------------------
-INSERT INTO `app_user` (`id`, `display_name`, `created_at`, `last_seen_at`) VALUES
-  ('0f0c1b3e-0000-4000-8000-000000000001', '演示用户', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3))
-ON DUPLICATE KEY UPDATE `display_name` = VALUES(`display_name`);
+

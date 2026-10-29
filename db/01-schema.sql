@@ -18,16 +18,37 @@ CREATE DATABASE IF NOT EXISTS `tujang`
 USE `tujang`;
 
 -- ---------------------------------------------------------------------------
--- 用户：极简身份方案。app_user 只承担"记录归属"，不承担登录/密码。
--- 身份由 HttpOnly Cookie 承载，见 docs/api.md §0.4
+-- 用户：账号表。登录用 username + 密码（BCrypt 哈希），身份由会话 Cookie 承载。
+-- app_user 同时是"记录归属"的外键目标：asset.user_id / task.user_id 指向这里。
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS `app_user` (
-  `id`           CHAR(36)    NOT NULL COMMENT 'UUID',
-  `display_name` VARCHAR(64) NOT NULL COMMENT '展示名，随机生成',
+  `id`            CHAR(36)    NOT NULL COMMENT 'UUID',
+  `username`      VARCHAR(32) NOT NULL COMMENT '登录名，大小写不敏感（collation 保证）',
+  `password_hash` VARCHAR(72) NOT NULL COMMENT 'BCrypt 哈希，永不存明文',
+  `display_name`  VARCHAR(64) NOT NULL COMMENT '展示名，默认与 username 相同',
+  `created_at`    DATETIME(3) NOT NULL,
+  `last_seen_at`  DATETIME(3) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_user_username` (`username`)
+) ENGINE = InnoDB COMMENT '用户账号';
+
+-- ---------------------------------------------------------------------------
+-- 会话：登录成功后签发一个随机 token（放进 HttpOnly Cookie），
+-- 库里只存它的 SHA-256。这样即使库被读走，也拿不到可用的 Cookie 值。
+-- 每次登录一行，退出即删；过期由 expires_at 判定，读取时顺带清理。
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `user_session` (
+  `token_hash`   CHAR(64)    NOT NULL COMMENT 'SHA-256(token) 十六进制',
+  `user_id`      CHAR(36)    NOT NULL,
   `created_at`   DATETIME(3) NOT NULL,
+  `expires_at`   DATETIME(3) NOT NULL,
   `last_seen_at` DATETIME(3) NOT NULL,
-  PRIMARY KEY (`id`)
-) ENGINE = InnoDB COMMENT '用户（极简身份）';
+  PRIMARY KEY (`token_hash`),
+  KEY `idx_session_user` (`user_id`),
+  KEY `idx_session_expires` (`expires_at`),
+  CONSTRAINT `fk_session_user` FOREIGN KEY (`user_id`) REFERENCES `app_user` (`id`) ON DELETE CASCADE
+) ENGINE = InnoDB COMMENT '登录会话';
+
 
 -- ---------------------------------------------------------------------------
 -- 分类：单独成表，保证 Tab 顺序稳定、名称可改

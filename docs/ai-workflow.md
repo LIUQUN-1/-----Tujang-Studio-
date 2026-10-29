@@ -82,7 +82,7 @@ AI 最容易犯的错不是写不出代码，而是**前后端各写一套字段
 | `mvn spring-boot:run` 在中文路径下 `ClassNotFoundException` | `mvn test` 走 surefire，不经过插件 fork 的 classpath 组装 | 真去启动了一次 |
 | 种子数据中文双重编码（`æ—…è¡Œ`） | 测试用的是内存里的字符串，不经过 MySQL 客户端编码协商 | `SELECT HEX(LEFT(title,2))` 查到 `C3A6E28094` |
 | 生产构建下不存在的模板返回 200 | 单测只断言 `notFound()` 被调用，不管 HTTP 状态码 | 浏览器 DevTools 看状态码，发现是 200 |
-| 并发首屏建用户撞主键 → 500 | 单测里 `UserService` 的 mapper 是 mock，永远不会真的并发 INSERT | 用浏览器打开历史页，日志出现 `Duplicate entry` |
+| 并发首屏建用户撞主键 → 500 | 单测里当时的 `UserService`（P9 已拆成 `AuthService`）的 mapper 是 mock，永远不会真的并发 INSERT | 用浏览器打开历史页，日志出现 `Duplicate entry` |
 | REPEATABLE READ 下"插入后读不到" | 同上，没有真事务 | 修完上一个 bug 后仍然 500 |
 
 表格里后两行是同一个教训的两个版本：**凡是"首次访问/初始化"的路径，
@@ -142,3 +142,4 @@ AI 很容易给出"看起来对"的修法。上面第 4 个问题（并发建用
   这些是本机配置，已 git-ignore）
 - AI 编码工具：DeepSeek Harness（Agent 形态，可读写仓库、执行命令）
 - 人工验证：curl + 浏览器（Edge headless 截图，见 `docs/*.png`）
+

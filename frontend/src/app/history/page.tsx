@@ -1,7 +1,8 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { TaskList } from "@/components/task-list";
-import { listTasksServer } from "@/lib/server-api";
+import { getMe, listTasksServer } from "@/lib/server-api";
 
 export const dynamic = "force-dynamic";
 
@@ -12,8 +13,15 @@ export const metadata = { title: "我的记录" };
  *
  * <p>首屏由服务端直接把任务渲染出来，刷新后立刻可见；客户端 store 会在
  * `TaskWatcher` 里再同步一次并继续跟踪未完成的任务。
+ *
+ * <p>未登录直接跳登录页，并把"回来以后去哪"带上（`next`），登录成功后回到这里。
  */
 export default async function HistoryPage() {
+  const me = await getMe();
+  if (!me) {
+    redirect("/login?next=/history");
+  }
+
   const tasks = await listTasksServer(50);
   const pending = tasks.filter((task) => task.status === "PENDING" || task.status === "PROCESSING").length;
 
@@ -22,7 +30,8 @@ export default async function HistoryPage() {
       <header className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">我的记录</h1>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">
-          这里列出你提交过的制作任务：创建时间、处理进度、成功的结果图或失败原因。
+          这里列出 <span className="text-zinc-200">{me.username}</span> 提交过的制作任务：
+          创建时间、处理进度、成功的结果图或失败原因。
           {pending > 0 && <span className="ml-1 text-accent-soft">其中 {pending} 个正在处理中。</span>}
         </p>
       </header>

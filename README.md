@@ -3,8 +3,9 @@
 > 素材制作网站：浏览模板 → 上传素材 → 提交制作任务 → 后台异步执行 → 查看历史与结果。
 > 小影科技 2027 校招题。
 
-**验收版本：tag `v1.0.0`**（`git rev-list -n 1 v1.0.0` 取完整 commit hash）
-· 后端 53 例 + 前端 38 例测试 · 冷启动验证见 [§7.1.1](#711-容器冷启动实测记录) 与 [§7.1.2](#712-干净目录克隆实测验收者视角)
+**验收版本：tag `v1.1.0`**（`git rev-list -n 1 v1.1.0` 取完整 commit hash）
+· 账号登录（注册 / 登录 / 退出，BCrypt + 会话表）· 后端 61 例 + 前端 47 例测试
+· 冷启动验证见 [§7.1.1](#711-容器冷启动实测记录) 与 [§7.1.2](#712-干净目录克隆实测验收者视角)
 · 需求对照与"已验证 / 未验证"见 [§7.1](#71-需求对照)
 
 ---
@@ -41,6 +42,7 @@ POST /api/tasks ──> 202 + 完整任务对象（不等制作完成）
 | P6 | 用户身份与个人记录 | ✅ 完成 |
 | P7 | 测试、CI、容器交付、README 定稿 | ✅ 完成 |
 | P8 | 冷启动验收与收尾 | ✅ 完成 |
+| P9 | 账号登录（替换"Cookie 即身份"，含注册/登录/退出与会话管理） | ✅ 完成 |
 
 ![模板列表](docs/p1-list.png)
 
@@ -70,6 +72,11 @@ docker compose up --build
 ```bash
 docker compose ps          # 三行都要是 healthy
 ```
+
+**第一次用**：可以点「注册」建一个新账号，也可以用 `dev` profile 下自动创建的演示账号
+**`demo` / `demo1234`**（生产 profile 不创建任何内置账号）。
+
+> 浏览模板不需要登录；上传素材、提交制作、查看"我的记录"需要登录——记录按账号隔离。
 
 ### 方式二：本地开发
 
@@ -139,22 +146,23 @@ BACKEND_URL=http://localhost:8090
 ```
 .
 ├─ frontend/                    Next.js 15 App Router
-│  ├─ src/app/                  页面：列表 / 详情 / 历史 + error.tsx / not-found.tsx
-│  ├─ src/components/           模板卡、上传位、任务卡、任务列表、顶栏
+│  ├─ src/app/                  页面：列表 / 详情 / 历史 / 登录 / 注册 + error.tsx / not-found.tsx
+│  ├─ src/components/           模板卡、上传位、任务卡、任务列表、顶栏、登录表单
 │  ├─ src/store/task-store.ts   Zustand：任务按 id 索引
 │  ├─ src/hooks/                轮询、上传位、服务端数据合并
-│  ├─ src/lib/                  api（浏览器）/ server-api（服务端）/ 校验 / 格式化
-│  ├─ src/middleware.ts         首次访问发身份 Cookie
+│  ├─ src/lib/                  api（浏览器）/ server-api（服务端）/ 登录 / 校验 / 格式化
 │  ├─ Dockerfile                三阶段：deps → build → runner
 │  └─ next.config.ts            rewrites 代理 + distDir 分离
 ├─ backend/                     Spring Boot 3.3（Maven）
 │  ├─ src/main/java/com/tujang/studio/
 │  │  ├─ web/                   Controller、拦截器、统一异常处理
-│  │  ├─ service/               模板 / 素材 / 任务 / 流水线 / 模拟配置 / 用户
-│  │  ├─ mapper/                MyBatis 注解 SQL
-│  │  ├─ support/               ULID、图片探测、存储、时间、Cookie
-│  │  └─ config/                线程池、静态资源与拦截器注册
-│  ├─ src/test/java/            9 个测试类，53 例
+│  │  ├─ auth/                  当前用户抽象（ThreadLocal + Provider）
+│  │  ├─ service/               模板 / 素材 / 任务 / 流水线 / 模拟配置 / 账号
+│  │  ├─ mapper/                MyBatis 注解 SQL（含 user_session）
+│  │  ├─ support/               ULID、图片探测、存储、时间、会话 Cookie 与 token
+│  │  ├─ demo/                  dev 下的演示账号初始化
+│  │  └─ config/                密码哈希、线程池、静态资源与拦截器注册
+│  ├─ src/test/java/            10 个测试类，61 例
 │  ├─ Dockerfile                两阶段：maven build → JRE 运行
 │  └─ pom.xml
 ├─ db/01-schema.sql             表结构（含 CHECK 约束，兜住终态不变式）
@@ -162,7 +170,7 @@ BACKEND_URL=http://localhost:8090
 ├─ seed/                        种子素材：covers / results / samples
 ├─ tools/gen_seed_assets.py     素材生成脚本（可复现，无第三方版权素材）
 ├─ docs/api.md                  接口契约（唯一真源）
-├─ docs/demo.md                 7 段可直接复制的演示命令
+├─ docs/demo.md                 可直接复制的演示命令
 ├─ docs/ai-workflow.md          AI 工作流说明
 ├─ .github/workflows/ci.yml     CI：web / api / 镜像构建
 ├─ docker-compose.yml           mysql + api + web
@@ -250,7 +258,8 @@ mysql --default-character-set=utf8mb4 -u root -p < db/02-seed.sql
 
 | 表 | 作用 |
 |---|---|
-| `app_user` | 身份（`id` 即 Cookie 值） |
+| `app_user` | 账号（`username` 唯一、`password_hash` 为 BCrypt、展示名） |
+| `user_session` | 登录会话（`token_hash` = sha256(Cookie 值)，30 天过期） |
 | `category` | 模板分类（4 个） |
 | `template` | 模板（9 个，覆盖 1/2/3 张素材、仅 JPG、1MB 上限等差异） |
 | `asset` | 上传素材（落盘路径、宽高、大小、归属） |
@@ -287,21 +296,23 @@ python tools/gen_seed_assets.py     # 需要 Pillow
 
 ### 3.1 接口清单
 
-| 方法 | 路径 | 作用 | 主要响应 |
-|---|---|---|---|
-| GET | `/api/health` | 健康检查 | `200 {status,app,time}` |
-| GET | `/api/categories` | 分类与模板数 | `200 [{code,name,count}]` |
-| GET | `/api/templates?category=` | 模板列表（可按分类筛） | `200 [{id,title,coverUrl,...}]` |
-| GET | `/api/templates/{id}` | 模板详情 | `200 {...,acceptedMimeTypes,maxFileSizeBytes}` / `404 TEMPLATE_NOT_FOUND` |
-| POST | `/api/uploads` | 上传一张素材（multipart） | `201 {assetId,url,mimeType,sizeBytes,width,height}` |
-| DELETE | `/api/uploads/{assetId}` | 删除未使用素材 | `204` / `403` / `409 ASSET_IN_USE` |
-| POST | `/api/tasks` | 提交制作任务 | **`202` + 完整 `TaskDto`（PENDING）** |
-| GET | `/api/tasks/{id}` | 查询单个任务（**纯只读**） | `200 TaskDto` / `403 TASK_FORBIDDEN` |
-| GET | `/api/tasks?limit=50` | 个人历史（创建时间倒序） | `200 [TaskDto]` |
-| GET | `/api/me` | 当前身份 | `200 {userId,displayName,devTools}` |
-| POST | `/api/dev/users/switch` | 切换/切回用户（**仅 dev**） | `200` + `Set-Cookie` |
-| GET / POST | `/api/dev/simulation` | 读取 / 设置失败与耗时（**仅 dev**） | `200 {failStep,perStepDurations,applyTo}` |
-| GET | `/files/**` | 种子素材与结果图 | `200 image/jpeg` |
+| 方法 | 路径 | 需要登录 | 作用 | 主要响应 |
+|---|---|---|---|---|
+| GET | `/api/health` | — | 健康检查 | `200 {status,app,time}` |
+| GET | `/api/categories` | — | 分类与模板数 | `200 [{code,name,count}]` |
+| GET | `/api/templates?category=` | — | 模板列表（可按分类筛） | `200 [{id,title,coverUrl,...}]` |
+| GET | `/api/templates/{id}` | — | 模板详情 | `200 {...,acceptedMimeTypes,maxFileSizeBytes}` / `404 TEMPLATE_NOT_FOUND` |
+| POST | `/api/auth/register` | — | 注册（注册即登录） | `201 MeDto` + `Set-Cookie` / `409 USERNAME_TAKEN` |
+| POST | `/api/auth/login` | — | 登录 | `200 MeDto` + `Set-Cookie` / `401 INVALID_CREDENTIALS` |
+| POST | `/api/auth/logout` | ✔ | 退出（删会话、清 Cookie） | `204` |
+| GET | `/api/me` | ✔ | 当前用户 | `200 {userId,username,displayName,devTools}` / `401 UNAUTHORIZED` |
+| POST | `/api/uploads` | ✔ | 上传一张素材（multipart） | `201 {assetId,url,mimeType,sizeBytes,width,height}` |
+| DELETE | `/api/uploads/{assetId}` | ✔ | 删除未使用素材 | `204` / `403` / `409 ASSET_IN_USE` |
+| POST | `/api/tasks` | ✔ | 提交制作任务 | **`202` + 完整 `TaskDto`（PENDING）** |
+| GET | `/api/tasks/{id}` | ✔ | 查询单个任务（**纯只读**） | `200 TaskDto` / `403 TASK_FORBIDDEN` |
+| GET | `/api/tasks?limit=50` | ✔ | 个人历史（创建时间倒序） | `200 [TaskDto]` |
+| GET / POST | `/api/dev/simulation` | — | 读取 / 设置失败与耗时（**仅 dev**） | `200 {failStep,perStepDurations,applyTo}` |
+| GET | `/files/**` | — | 种子素材与结果图 | `200 image/jpeg` |
 
 错误统一为 `{code,message,fields?}`，HTTP 状态码与错误码的对应表见契约 §0.6；
 500 只返回 `INTERNAL_ERROR`，不回显堆栈。
@@ -391,14 +402,15 @@ python tools/gen_seed_assets.py     # 需要 Pillow
 ## 4. 演示指南
 
 完整的可复制命令见 [docs/demo.md](docs/demo.md)。下面只列"看什么"。
+所有演示都以**已登录**为前提：打开站点后注册一个账号，或用演示账号 `demo / demo1234`。
 
 ### 4.1 成功路径
 
-列表 → 点「旅行明信片」（要求 2 张）→ 拖入/选择 2 张图 → 提交。
+注册/登录 → 列表 → 点「旅行明信片」（要求 2 张）→ 拖入/选择 2 张图 → 提交。
 卡片立刻出现（"等待处理"），随后阶段依次走到 `素材检查 → 模拟生成 → 结果整理`，
 约 4 秒后变成"已完成"并出现结果缩略图，点开是大图。
 
-![历史与结果](docs/p4-history.png)
+![历史与结果](docs/p9-history.png)
 
 ### 4.2 指定阶段失败
 
@@ -425,64 +437,81 @@ curl -X POST localhost:8080/api/dev/simulation \
 
 ### 4.4 多任务同屏
 
-同一个页面连续提交 3 个任务：三张卡各自推进，互不串扰；任意一张失败不影响其他两张。
-在详情页与 `/history` 都能看到同一批任务。
+同一个页面连续提交多个任务：各张卡各自推进，互不串扰；任意一张失败不影响其他几张。
+下图是同一个账号的历史页：两条处理中、一条成功、一条失败。
+
+![同屏多任务](docs/p9-mixed.png)
 
 ### 4.5 刷新恢复
 
 任务处理中按 `F5`：页面从服务端重新拿到任务列表，未完成的继续被跟踪，
 几分钟后仍然是它自己走到终态（不是靠刷新推进的）。
 
-### 4.6 身份隔离
+### 4.6 账号隔离
 
-顶栏「切换用户」→ 页面重载、名字变了、「我的记录」清空 →「切回上一个」→ 记录回来。
-详见 §5。
+注册 `alice` 提交一个任务 → 退出登录 → 注册 `bob` → 「我的记录」为空、
+详情页也看不到 alice 的任务 → 退出、用 `alice` 登录 → 记录和结果都还在。详见 §5.1。
 
-### 4.7 验证"生产没有开发接口"
+### 4.7 验证"未登录做不了事"
+
+```bash
+curl -o /dev/null -w '%{http_code}\n' localhost:8080/api/tasks      # 401
+curl -o /dev/null -w '%{http_code}\n' localhost:8080/api/templates  # 200（浏览不需要登录）
+curl -o /dev/null -w '%{http_code}\n' localhost:3000/history        # 307 → /login
+```
+
+### 4.8 验证"生产没有开发接口"
 
 ```bash
 SPRING_PROFILES_ACTIVE=prod docker compose up -d api   # 或本地改环境变量重启
 curl -i localhost:8080/api/dev/simulation              # 404
-curl -s localhost:8080/api/me                          # devTools:false
+curl -s localhost:8080/api/me                          # 401（且没有 demo 账号）
 curl -s localhost:8080/api/templates                   # 仍然 200
 ```
 
 ---
 
-## 5. 用户身份与个人记录
+## 5. 账号、会话与个人记录
 
-方案是**「Cookie 即身份」**，没有账号密码：
+**真的是账号**：`app_user` 是账号表（`username` 唯一 + BCrypt 密码哈希），
+登录成功后签发会话，所有记录按 `user_id` 归属。
 
 | 项 | 值 |
 |---|---|
-| Cookie | `tujang_uid`，值就是 `app_user.id`（UUID v4） |
+| 会话 Cookie | `tujang_sid`，32 字节随机数（base64url） |
 | 属性 | `HttpOnly; SameSite=Lax; Path=/; Max-Age=30d`（生产部署应再加 `Secure`） |
-| 发放（页面） | Next 中间件在 Cookie 缺失时预生成，同时写进「本次请求」与「响应」 |
-| 发放（接口） | 没有合法 Cookie 时由 Java 建用户并 `Set-Cookie`，经代理透传 |
+| 服务端存储 | `user_session.token_hash = sha256(token)`——**库里没有可用的 Cookie 值** |
+| 密码 | BCrypt（cost 10），只存哈希；长度 8~72 字节 |
+| 用户名 | 3~24 位字母/数字/下划线；大小写不敏感（表 collation 决定） |
 | 解析 | `CurrentUserInterceptor` → `CurrentUserHolder`（ThreadLocal）→ `CurrentUserProvider` |
 | 隔离 | 所有查询/提交都按 `userId` 过滤；访问他人任务是 `403 TASK_FORBIDDEN` |
 
-**为什么由 Next 中间件先发 Cookie**：服务端组件渲染期间不能写 Cookie，而历史页需要拿身份
-去后端取数据。中间件把 id 同时写进「本次请求」与「响应」，SSR 的 fetch 就能带上它；
-后端发现这个 id 在库里不存在时**采用它**建行（幂等写入），因此既不会给每个 SSR 请求多建空用户，
-也不会出现"浏览器一个身份、SSR 另一个身份"。
+**权限边界**：浏览模板公开；上传素材、提交任务、"我的记录"需要登录。
+未登录访问受保护接口返回 `401 UNAUTHORIZED`，历史页直接跳 `/login?next=/history`。
+详情页在未登录时把上传区换成登录入口（不让人传完才被 401 打回）。
 
-**为什么接口请求不让中间件发**：`/api/**` 是 rewrite 到 Java 的，Next 不会把中间件设的
-`Set-Cookie` 合并进这个代理响应（页面响应会带上，`/api/me` 不会）。如果接口也靠中间件发，
-curl/脚本这类没有 Cookie 的客户端永远拿不到身份，上传和提交会分属两个用户。
-所以中间件的 matcher 排除了 `api`/`files`：**页面由中间件发，接口由 Java 发**。
-这也是 `docs/demo.md` 里每条 curl 都要带同一个 Cookie jar 的原因。
+**登录/注册失败的处理**：密码错与用户不存在返回同一句 `401 INVALID_CREDENTIALS`，
+不区分两者——否则等于送了一个账号枚举接口。用户不存在时仍会跑一次 BCrypt 比对，
+让两条路径耗时接近。用户名重复返回 `409 USERNAME_TAKEN`，靠唯一索引保证并发下只有一个人成功。
 
-服务端取数由 [frontend/src/lib/server-api.ts](frontend/src/lib/server-api.ts) 转发 `Cookie` 头；
-否则在 Java 看来每个 SSR 请求都是新访客，历史页永远是空的。
+**会话生命周期**：登录/注册时建一行 `user_session`；退出删该行并清 Cookie；
+每次登录顺带清理过期行；30 天后自然失效。服务端不保存"用户是否登录"的布尔值，
+一切以会话表为准，所以删掉一行就等于让某个设备下线。
 
-**边界（刻意如此，不是遗漏）**：这不是认证。知道对方 UUID 就能读到对方的记录。
-本题不要求登录体系，这里只保证"记录按人隔离 + id 不可猜"。
-若要变成真认证，最小改动是加凭据表并把拦截器换成校验签名 Cookie——
-业务层只依赖 `CurrentUserProvider`，其余代码不用动。
+**SSR 怎么带上身份**：[frontend/src/lib/server-api.ts](frontend/src/lib/server-api.ts) 把浏览器
+Cookie 转发给 Java。登录态写在 Cookie 里、由 Java 校验，Next 只负责透传——
+这也是为什么 SSR 与浏览器看到的是同一个用户。
 
-演示：见 §4.6。用普通窗口 + 隐身窗口各算一个用户，效果相同。
-「切换用户 / 切回上一个」只在 `dev` profile 下出现；`prod` 时按钮消失、接口 404。
+### 5.1 演示：两个账号各看各的记录
+
+1. 打开 <http://localhost:3000>，注册 `alice`（或直接用 `demo / demo1234`），提交一个任务并等它完成。
+2. 右上角「退出登录」→ 注册 `bob` → 「我的记录」是空的，详情页也看不到 alice 的任务。
+3. 退出、用 `alice` 登录 → 记录和结果图都还在。
+
+命令行等价（`docs/demo.md` 有完整命令）：两个不同的 Cookie jar = 两个账号。
+
+> **边界**：密码本身是安全的（BCrypt + HttpOnly 会话），但**没有**邮箱验证、找回密码、
+> 登录限流、多设备管理。生产部署还应加 `Secure` Cookie 与 HTTPS。这些都写在 §7.3。
 
 ---
 
@@ -490,29 +519,31 @@ curl/脚本这类没有 Cookie 的客户端永远拿不到身份，上传和提�
 
 ### 6.1 测试清单
 
-后端 53 例（`mvn -B -f backend/pom.xml test`，全部是 Mockito 单测，不需要数据库）：
+后端 61 例（`mvn -B -f backend/pom.xml test`，全部是 Mockito 单测，不需要数据库）：
 
 | 测试类 | 例数 | 覆盖 |
 |---|---|---|
+| `AuthServiceTest` | 12 | 注册写哈希/重名 409/格式 400；登录成功/密码错与用户不存在同码/空输入；会话解析与过期；退出按哈希删 |
 | `TaskPipelineTest` | 8 | 步骤顺序、三处失败中断、终态跳过、抢不到 `PENDING`、队列满 |
 | `TaskServiceTest` | 9 | 提交校验（数量/重复/归属/类型/大小/文件在盘）、受理即返回、403 |
 | `AssetServiceTest` | 9 | 大小/类型/可解码三层校验、403、409 引用保护 |
-| `UserServiceTest` | 7 | 认领已有 / 采用预置 id / 无 Cookie / 非法 Cookie / 显示名 / 换新 |
 | `SimulationRegistryTest` | 6 | NEXT 一次性 / ALL 持续 / 仅耗时 / 清空 |
 | `TemplateServiceTest` | 5 | 分类切换、空分类、映射、404、计数 |
 | `ImageInspectorTest` | 5 | 魔数识别与损坏图片 |
 | `SeedResultProducerTest` | 3 | 结果图挑选与复制 |
+| `SessionTokensTest` | 3 | token 唯一/URL 安全、SHA-256 摘要稳定且不含原文 |
 | `HealthControllerTest` | 1 | 健康检查 |
 
-前端 38 例（`pnpm --dir frontend test`）：
+前端 47 例（`pnpm --dir frontend test`）：
 
 | 测试文件 | 例数 | 覆盖 |
 |---|---|---|
 | `store/task-store.test.ts` | 10 | 按 id 索引、批量写入、只补缺失、查询失败不改状态、活跃集合 |
 | `components/task-card.test.tsx` | 8 | 处理中/等待/成功/失败四种呈现、**查询异常 ≠ 任务失败**、重试成功与失败 |
 | `lib/upload.test.ts` | 8 | 数量/类型/大小校验与文案 |
+| `lib/auth-rules.test.ts` | 8 | 用户名/密码规则（长度、字符集、72 字节上限）与字段级错误 |
 | `lib/format.test.ts` | 7 | 时间、体积、数量文案 |
-| `hooks/use-task-poller.test.tsx` | 5 | 无待处理不发请求、终态停轮询、两任务互不覆盖、查询失败继续重试 |
+| `hooks/use-task-poller.test.tsx` | 6 | 无待处理不发请求、**未登录不发请求**、终态停轮询、两任务互不覆盖、查询失败继续重试 |
 
 刻意**没有**做浏览器 E2E（题面不要求）：上传与轮询链路用 curl 走完整代理路径验证，
 UI 交互人工确认并留截图（`docs/*.png`）。
@@ -548,10 +579,10 @@ UI 交互人工确认并留截图（`docs/*.png`）。
 | R-06 失败与耗时模拟 | 开发接口 + 受理时快照进任务行 | ✅ | 三段失败各测一次；`NEXT` 一次性、`ALL` 持续；耗时 1200/4000/1200 实测 |
 | R-07 状态表达与请求异常 | 上传中/提交中/任务等待处理/成功/失败/查询异常分开 | ✅ | 单测断言"查询失败不改 `status`"；截图里黄色提示与红色失败并存 |
 | R-08 多任务与轮询生命周期 | 按 id 索引；终态移出集合；集合空即停 | ✅ | 三任务同屏各自推进；单测覆盖"无待处理不发请求""终态停轮询" |
-| R-09 刷新恢复与记录 | 服务端首屏 + 客户端接管轮询；历史页含结果缩略图 | ✅ | 处理中按 F5 后仍在跟踪并自行完成（`docs/p4-history.png`） |
-| R-10 身份与个人记录 | Cookie 身份 + 按人隔离 + 切回上一个 | ✅ | A 有 1 条 / B 有 0 条 / 切回 A 仍有 1 条；B 访问 A 的任务 403 |
+| R-09 刷新恢复与记录 | 服务端首屏 + 客户端接管轮询；历史页含结果缩略图 | ✅ | 处理中按 F5 后仍在跟踪并自行完成（`docs/p9-history.png`） |
+| R-10 身份与个人记录 | **账号密码登录**（BCrypt + 会话表）+ 按人隔离 | ✅ | A 有 1 条 / B 有 0 条 / 用密码重新登录 A 仍有 1 条；B 访问 A 的任务 403；退出后 `/api/me` 401 |
 | R-11 视觉与可用性 | 桌面主界面、390px 可操作、语义标签、全局 `:focus-visible` | ⚠️ | 桌面与 390px 截图；上传位/图标按钮均有 `aria-label`；**Tab 顺序未逐键走查** |
-| R-12 CI 与关键测试 | 前端 38 例 + 后端 53 例；三个 CI job | ⚠️ | 测试与构建命令本地全绿；**Actions 未在 GitHub 上真实调度过**（仓库无远端） |
+| R-12 CI 与关键测试 | 前端 47 例 + 后端 61 例；三个 CI job | ⚠️ | 测试与构建命令本地全绿；**Actions 未在 GitHub 上真实调度过**（仓库无远端） |
 | R-13 材料与说明 | 本 README 七项 + `docs/` | ✅ | 见目录与各节 |
 | R-14 容器交付 | `docker compose up --build` 三服务 | ✅ | P7 与 P8 两次冷启动，含干净目录 `git clone` 后从零构建 |
 
@@ -580,8 +611,9 @@ UI 交互人工确认并留截图（`docs/*.png`）。
 | 失败注入 | `GENERATE + NEXT` → `FAILED / GENERATE_TIMEOUT / result=null`；下一个任务自动恢复 |
 | 404 | `/templates/nope` → 404，`/nowhere` → 404 |
 | 生产 profile | 三个 dev 接口 404、`devTools=false`、`/api/templates` 仍 200 |
+| 账号 | 注册即登录并下发 `tujang_sid`；未登录 `/api/me`、`/api/tasks`、`/api/uploads` 全 401；`/history` 307 → `/login?next=/history` |
 
-![容器内运行的列表页](docs/p7-compose.png)
+![容器内同时进行的多个任务](docs/p9-mixed.png)
 
 ### 7.1.2 干净目录克隆实测（验收者视角）
 
@@ -614,22 +646,31 @@ docker compose up -d --build
 - **服务重启后自动恢复执行**：线程池在进程内，重启时正在跑的任务会停在 `PROCESSING`。
   重启后前端会一直显示处理中并持续轮询——**不会**自动失败或续跑。要续跑需要
   启动时扫 `PROCESSING` 行重新派发（并把"执行中"改成"可重试"），题面明确不要求。
-- 失败任务重试、任务删除、结果下载、模板 CRUD、积分会员、登录鉴权、国际化。
+- 失败任务重试、任务删除、结果下载、模板 CRUD、积分会员、国际化。
 - MQ / Redis / SSE / WebSocket / 集群部署：单机线程池足够讲清"受理—执行—落库"的边界。
 - 任务受理幂等、断点续跑：可在后续用 `Idempotency-Key` + 步骤级幂等实现。
 
 ### 7.3 已知限制
 
-- 身份不是认证，Cookie 值可被冒用（见 §5「边界」）。
+**账号相关（P9 引入登录后才成立）**
+
+- 没有邮箱/手机验证、找回密码、改密码、多设备管理、第三方登录。
+- 没有登录失败限流：暴力破解只能靠 BCrypt 的算力成本挡，生产应加 IP / 账号维度限流。
+- HTTP 下没有 `Secure` Cookie（本地演示用 http）；生产部署必须走 HTTPS 并开启。
+- 会话固定 30 天，无续期、无"记住我"之外的选择；退出只删当前这个会话，不是"全部设备下线"。
+
+**业务与实现**
+
 - 模拟配置存在内存里，后端重启即失效（它是开发工具，不是业务状态）。
 - 上传位移除只清本地预览，不调用服务端 `DELETE`：已提交的素材不能删，未提交的会留下孤儿文件。
 - 结果图是预置图复制的，不是真合成；同一模板的多次制作结果可能相同。
 - 未做浏览器 E2E，UI 交互为人工验证 + 截图。
-- 数据库无迁移框架：改表结构需要手写 `ALTER` 或重建数据卷（见 §8.4）。
+- 数据库无迁移框架：改表结构需要手写 `ALTER` 或重建数据卷（见 §8.2）。
 
 ### 7.4 实际投入
 
-按 `plan.md` 的估算约 7–7.5 人日（P0 0.5 / P1 0.75 / P2 0.75 / P3 1.5 / P4 1.5 / P5 0.5 / P6 0.5 / P7 1.0 / P8 0.5）。
+按 `plan.md` 的估算约 7–7.5 人日（P0 0.5 / P1 0.75 / P2 0.75 / P3 1.5 / P4 1.5 / P5 0.5 / P6 0.5 / P7 1.0 / P8 0.5），
+P9（账号登录）是题目要求之外补做的，约 0.5 人日。
 实际节奏与之接近，其中**约三分之一时间花在真实环境验证**（容器冷启动、并发首屏、字符编码、
 端口占用、Windows 路径），而不是写业务代码——这些也正是 bug 最集中的地方，记录在 `plan.md`
 每个阶段的「实际与计划的偏差」里。
@@ -658,6 +699,21 @@ docker compose up -d --build   # 只重建变化的镜像，数据卷不动
 curl -fsS localhost:3000/api/health   # 经 Next 代理，顺带验证 rewrite 链路
 ```
 
+> **v1.0.0 → v1.1.0 有表结构变更**（`app_user` 加 `username`/`password_hash`、新增 `user_session`）。
+> `db/*.sql` 只在空卷时执行，所以升级老数据要么重建数据卷（`down -v`，数据全丢），
+> 要么手工执行：
+>
+> ```sql
+> ALTER TABLE app_user
+>   ADD COLUMN username VARCHAR(32) NOT NULL AFTER id,
+>   ADD COLUMN password_hash VARCHAR(72) NOT NULL AFTER username,
+>   ADD UNIQUE KEY uk_user_username (username);
+> CREATE TABLE user_session (...);  -- 见 db/01-schema.sql
+> ```
+>
+> 老用户没有密码，需要补一条 `UPDATE ... SET username = CONCAT('user_', LEFT(id,8))`
+> 并让这些人重新注册。这是"没有迁移框架"的真实代价，写在 §7.3。
+
 ### 8.3 回滚
 
 ```bash
@@ -665,9 +721,10 @@ git fetch --tags && git checkout v1.0.0
 docker compose up -d --build
 ```
 
-- **代码回滚**：切换 tag 后重新 `up --build` 即可，镜像名带版本（`tujang-api:0.1.0`）。
+- **代码回滚**：切换 tag 后重新 `up --build` 即可。
 - **数据回滚**：`db/` 里的脚本只在空卷时执行，回滚不会自动改表。
-  若新版本改过结构，需要按变更手写 `ALTER` 反向执行；本项目当前只有 v1.0.0，无此类变更。
+  v1.1.0 → v1.0.0 的列是新增的，旧代码不认识它们，直接回退代码即可运行（多出的列不影响）；
+  反向（v1.0.0 → v1.1.0）需要按 §8.2 手工加列。
 - **完全重来**：`docker compose down -v`（会删除 `mysql-data` 与 `app-data`，谨慎）。
 
 ### 8.4 数据与备份
@@ -748,3 +805,4 @@ Get-NetTCPConnection -LocalPort 8090 -State Listen | ForEach-Object { Stop-Proce
 - [docs/ai-workflow.md](docs/ai-workflow.md) — AI 工作流说明
 - [frontend/src/store/task-store.ts](frontend/src/store/task-store.ts) — 前端异步状态的核心
 - [backend/src/main/java/com/tujang/studio/service/TaskPipeline.java](backend/src/main/java/com/tujang/studio/service/TaskPipeline.java) — 后台三步执行的核心
+

@@ -44,11 +44,13 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        // /api/health 不建用户（健康检查会被反复调用，不该污染用户表）；
-        // /api/dev/** 是开发工具，也不需要身份（切换用户接口自己建人）。
+        // 这三类不需要身份：
+        //   /api/health  健康检查会被反复调用，不必查会话
+        //   /api/auth/** 注册/登录/退出本身就是"还没有身份"的时候用的
+        //   /api/dev/**  开发工具（模拟参数、演示账号），与登录无关
         registry.addInterceptor(currentUserInterceptor)
                 .addPathPatterns("/api/**")
-                .excludePathPatterns("/api/health", "/api/dev/**");
+                .excludePathPatterns("/api/health", "/api/auth/**", "/api/dev/**");
     }
 
     @Override

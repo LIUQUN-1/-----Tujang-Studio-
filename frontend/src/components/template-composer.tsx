@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
 import { UploadSlot } from "@/components/upload-slot";
@@ -14,8 +15,17 @@ import { useTaskStore } from "@/store/task-store";
  *
  * <p>提交成功后：把任务塞进 store（右侧立即出现卡片并开始轮询）、清空上传位。
  * 素材不上传服务端删除——它们已经属于这个任务了。
+ *
+ * <p>未登录时整块换成登录入口：素材归属到账号，匿名上传没有意义，
+ * 与其让用户传完再被 401 打回，不如提前说清楚。
  */
-export function TemplateComposer({ template }: { template: TemplateDetail }) {
+export function TemplateComposer({
+  template,
+  authed,
+}: {
+  template: TemplateDetail;
+  authed: boolean;
+}) {
   const { slots, readyCount, isUploading, allReady, pick, remove, retry, reset } =
     useUploadSlots(template);
 
@@ -25,6 +35,32 @@ export function TemplateComposer({ template }: { template: TemplateDetail }) {
 
   const accept = template.acceptedMimeTypes.join(",");
   const canSubmit = allReady && !isUploading && !submitting;
+
+  if (!authed) {
+    return (
+      <div className="mt-4 rounded-xl border border-dashed border-white/10 px-4 py-8 text-center">
+        <p className="text-sm text-zinc-300">登录后开始制作</p>
+        <p className="mx-auto mt-1 max-w-xs text-xs leading-relaxed text-zinc-600">
+          上传的素材和提交的任务都会记在你的账号下，登录后可以随时回来看进度和结果。
+        </p>
+        <div className="mt-4 flex items-center justify-center gap-2">
+          <Link
+            href={`/login?next=${encodeURIComponent(`/templates/${template.id}`)}`}
+            className="btn-primary px-4 py-2 text-xs"
+          >
+            登录
+          </Link>
+          <Link
+            href={`/register?next=${encodeURIComponent(`/templates/${template.id}`)}`}
+            className="btn-ghost px-4 py-2 text-xs"
+          >
+            注册
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
 
   const handleSubmit = async () => {
     setSubmitError(null);
