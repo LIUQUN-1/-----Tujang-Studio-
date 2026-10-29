@@ -17,5 +17,10 @@ export function formatBytes(bytes: number): string {
 /** ["image/jpeg","image/png"] → "JPG / PNG"，未知类型原样展示。 */
 export function formatMimeTypes(mimes: string[]): string {
   if (!mimes.length) return "不限";
-  return mimes.map((m) => MIME_LABELS[m] ?? m).join(" / ");
+  return mimes.map(mimeLabel).join(" / ");
+}
+
+/** 单个 MIME 的短标签，未知类型原样返回。 */
+export function mimeLabel(mime: string): string {
+  return MIME_LABELS[mime] ?? mime;
 }

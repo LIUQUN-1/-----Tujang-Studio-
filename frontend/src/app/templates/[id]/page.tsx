@@ -5,6 +5,7 @@ import type { Metadata } from "next";
 import { getTemplate } from "@/lib/api";
 import { ApiError } from "@/lib/api";
 import { formatBytes, formatMimeTypes } from "@/lib/format";
+import { TemplateComposer } from "@/components/template-composer";
 
 export const dynamic = "force-dynamic";
 
@@ -84,13 +85,7 @@ export default async function TemplateDetailPage({ params }: { params: Params })
             </div>
           </dl>
 
-          {/* P2 会在这里放真实的上传位与「提交制作」按钮 */}
-          <div className="mt-4 rounded-xl border border-dashed border-white/10 bg-white/[0.015] px-4 py-8 text-center">
-            <p className="text-sm text-zinc-400">素材上传与提交</p>
-            <p className="mt-1 text-xs text-zinc-600">
-              下一步接入：选择 / 预览 / 替换 / 移除，以及提交前的数量、格式、大小校验
-            </p>
-          </div>
+          <TemplateComposer template={template} />
         </section>
 
         {/* 右：该模板下的制作记录 */}

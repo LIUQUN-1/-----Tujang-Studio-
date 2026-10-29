@@ -46,4 +46,20 @@ public class ApiException extends RuntimeException {
     public static ApiException invalid(String message, Map<String, String> fields) {
         return new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", message, fields);
     }
+
+    public static ApiException forbidden(String code, String message) {
+        return new ApiException(HttpStatus.FORBIDDEN, code, message, null);
+    }
+
+    public static ApiException conflict(String code, String message) {
+        return new ApiException(HttpStatus.CONFLICT, code, message, null);
+    }
+
+    public static ApiException payloadTooLarge(String code, String message) {
+        return new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, code, message, null);
+    }
+
+    public static ApiException unsupportedMediaType(String code, String message) {
+        return new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, code, message, null);
+    }
 }

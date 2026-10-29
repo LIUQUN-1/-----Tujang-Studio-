@@ -36,11 +36,19 @@ mybatis:
   type-aliases-package: com.tujang.studio.domain
 
 app:
+  # P2/P3 期间所有请求都算作这个种子用户；P6 换成 Cookie 解析
+  demo-user-id: ${APP_DEMO_USER_ID:0f0c1b3e-0000-4000-8000-000000000001}
+
   storage:
     # 运行时产物（用户上传、制作结果），随容器 volume 持久化
     data-dir: ${APP_STORAGE_DATA_DIR:./data}
     # 只读种子素材（模板封面、预置结果图）
     seed-dir: ${APP_STORAGE_SEED_DIR:../seed}
+
+  upload:
+    # 未指定模板时的兜底约束（带上 templateId 时按模板的来）
+    default-allowed-mimes: image/jpeg,image/png
+    default-max-size-bytes: 10485760
 
   task:
     # 异步执行线程池：多任务可并行，题目不要求真并行

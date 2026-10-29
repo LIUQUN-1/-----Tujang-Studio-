@@ -205,15 +205,33 @@ PENDING ──> PROCESSING(ASSET_CHECK) ──> PROCESSING(GENERATE) ──> PRO
 4. **封面图烘焙了标题文字**：与卡片叠加标题重复。修复：`gen_seed_assets.py` 中封面/结果图不再绘制文字，
    仅示例照片保留。
 
-### P2 · 上传域（约 0.75 天）
+### P2 · 上传域（约 0.75 天）✅ 已完成 2026-10-29
 
-- [ ] 后端：multipart 接收 → 落盘 → 读宽高 → 写 `asset` → 返回 `{assetId,url,mimeType,sizeBytes}`；`/files/**` 静态映射
-- [ ] 后端：服务端校验 mime 白名单、大小上限、**能否真正解码**（防伪造扩展名）
-- [ ] 前端：`UploadSlot` 组件——按 `requiredImageCount` 渲染 N 个位；选择 / 预览 / 替换 / 移除；逐位独立的"上传中 / 失败可重试"
-- [ ] 前端：数量、类型、大小三重前端校验，错误文案具体（"第 2 张需为 JPG/PNG，当前为 WebP"）
-- [ ] 未传够时提交按钮禁用并说明缺几张
+- [x] 后端：multipart 接收 → 落盘 → 读宽高 → 写 `asset` → 返回 `{assetId,url,mimeType,sizeBytes}`；`/files/**` 静态映射
+- [x] 后端：服务端校验 mime 白名单、大小上限、**能否真正解码**（防伪造扩展名）
+- [x] 前端：`UploadSlot` 组件——按 `requiredImageCount` 渲染 N 个位；选择 / 预览 / 替换 / 移除；逐位独立的"上传中 / 失败可重试"
+- [x] 前端：数量、类型、大小三重前端校验，错误文案具体（"第 2 张需为 JPG，当前为 PNG"）
+- [x] 未传够时提交按钮禁用并说明缺几张
+- [x] 测试：后端 `AssetServiceTest` 9 例 + `ImageInspectorTest` 5 例；前端 `upload.test.ts` 8 例
 
-**完成判据**：传 3 种非法文件（超大 / 错类型 / 假扩展名）都被拦且提示准确；关掉后端上传显示失败并能重试。
+**完成判据**：三类非法文件都被拦且提示准确——实测
+超大（4.8 MB 喂 1 MB 上限模板）→ `413 FILE_TOO_LARGE`"文件 4.8 MB，超过上限 1 MB"；
+改扩展名假图 → `415 UNSUPPORTED_MEDIA_TYPE`；
+魔数正确但内容损坏 → `400 FILE_NOT_DECODABLE`；
+类型不符模板 → `415`"该模板仅接受 image/jpeg，当前为 image/png"。
+关掉后端时上传会失败并给出可重试入口（前端 `ApiError` 文案直接展示）。
+
+**实际与计划的偏差（已修正，后续阶段沿用）**：
+
+1. **提前引入 `CurrentUserProvider`**：`asset.user_id` 有外键非空，P2 就得有归属。做法是抽出接口 + `DemoCurrentUserProvider`（固定种子用户），
+   P6 只替换实现，业务代码不动。
+2. **删除素材的两道保护**：他人的 → `403 ASSET_FORBIDDEN`；已被任务引用 → `409 ASSET_IN_USE`（先查 `task_asset` 再删，
+   比撞外键报 500 更可读）。
+3. **校验顺序固定为"大小 → 魔数类型 → 解码"**，越贵的检查越靠后；三种失败给三种错误码（413/415/400），
+   前端不需要猜是哪类问题。
+4. **前端校验不作为安全边界**：`validateFile` 只为即时反馈，服务端一律用文件魔数重新判定内容类型。
+5. **不做浏览器 E2E**（题面也不要求）：上传链路用 curl 走完整代理路径验证 + 单测覆盖校验分支，UI 交互人工确认。
+   截图见 `docs/p2-detail.png`、`docs/p2-detail-mobile.png`（后者为真 390 CSS 视口）。
 
 ### P3 · 提交与异步执行（约 1.5 天）· 后端核心
 

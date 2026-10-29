@@ -29,3 +29,15 @@ export type ApiErrorBody = {
   message: string;
   fields?: Record<string, string>;
 };
+
+/** 上传成功后的素材（docs/api.md §3.1） */
+export type AssetDto = {
+  assetId: string;
+  url: string;
+  originalFilename: string;
+  mimeType: string;
+  sizeBytes: number;
+  width: number | null;
+  height: number | null;
+  createdAt: string;
+};

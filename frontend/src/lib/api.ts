@@ -47,6 +47,20 @@ async function toApiError(res: Response): Promise<ApiError> {
   return new ApiError(res.status, code, message, fields);
 }
 
+/** 浏览器侧 multipart 上传。不要手工设置 Content-Type，交给浏览器带 boundary。 */
+export async function apiUpload<T>(path: string, form: FormData, signal?: AbortSignal): Promise<T> {
+  const res = await fetch(path, {
+    method: "POST",
+    body: form,
+    headers: { Accept: "application/json" },
+    signal,
+  });
+  if (!res.ok) {
+    throw await toApiError(res);
+  }
+  return (await res.json()) as T;
+}
+
 /** 服务端组件使用：直接访问 Java，不经过自身代理。 */
 export function serverApiBase(): string {
   return (process.env.BACKEND_URL ?? "http://localhost:8080").replace(/\/+$/, "");
